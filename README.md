@@ -1,4 +1,4 @@
-# Paper.IO Clone
+# Paper.IO Clone - Varun Anand Patkar
 
 Paper.IO Clone is a project inspired by the popular [Paper.IO](http://paper.io/) game. It combines classic elements from Snake and area-capture genres into a 3D experience using 3JS and React. The core gameplay involves controlling a cube on a circular map: you start with a territory, leave a trail as you move, and by reconnecting with your territory you capture new areas. Crossing another player's trail eliminates them, while crossing your own trail results in self-destruction.
 
