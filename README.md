@@ -44,8 +44,8 @@ These tools were scaffolded using [bolt.new](https://bolt.new/), a platform that
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/your-username/paperio-clone.git
-   cd paperio-clone
+   git clone https://github.com/Varun-Patkar/PaperIOCloneVarunPatkar.git
+   cd PaperIOCloneVarunPatkar
    ```
 
 2. **Install Dependencies:**
