@@ -31,4 +31,22 @@ This document tracks the progress, challenges, and insights throughout the devel
 
 ---
 
+## 24th Feb 2025
+
+- **Camera and Movement Improvements:**
+  - Adjusted camera angle to provide an isometric-like view:
+    - Added slight tilt to show cube sides and depth
+    - Maintained consistent height and angle during movement
+    - Improved visual clarity of game elements
+  - Enhanced rotation mechanics:
+    - Fixed inconsistent rotation timing
+    - Now takes 0.5s per 45° rotation uniformly
+    - U-turns now show proper transitional movement
+  - Implemented smooth direction changes:
+    - Added gradual rotation between direction changes
+    - Eliminated abrupt direction switches
+    - Maintained constant movement speed during transitions
+
+---
+
 _More updates will be logged as development continues._

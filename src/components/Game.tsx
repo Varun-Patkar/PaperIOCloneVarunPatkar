@@ -61,13 +61,25 @@ export function Game() {
 			window.removeEventListener("keyup", handleKeyUp);
 		};
 	}, [updatePlayerDirection]);
-
 	const CameraController = () => {
+		const CAMERA_HEIGHT = 12; // Height of camera
+		const CAMERA_DISTANCE = 15; // Distance from player
+		const CAMERA_ANGLE = 0; // No tilt
+
 		useFrame((state) => {
 			if (playerRef.current) {
 				const x = playerRef.current.position.x;
 				const z = playerRef.current.position.z;
-				state.camera.position.set(x, 20, z);
+
+				// Calculate camera position with rotation
+				const cameraX = x - Math.sin(CAMERA_ANGLE) * CAMERA_DISTANCE;
+				const cameraY = CAMERA_HEIGHT;
+				const cameraZ = z + Math.cos(CAMERA_ANGLE) * CAMERA_DISTANCE;
+
+				// Position camera at an angle
+				state.camera.position.set(cameraX, cameraY, cameraZ);
+
+				// Look at player position
 				state.camera.lookAt(x, 0, z);
 			}
 		});
