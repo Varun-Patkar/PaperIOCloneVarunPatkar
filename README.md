@@ -1,6 +1,6 @@
 # Paper.IO Clone
 
-Paper.IO Clone is a project inspired by the popular [Paper.IO](https://games.voodoo.io/paperio2) game. It combines classic elements from Snake and area-capture genres into a 3D experience using 3JS and React. The core gameplay involves controlling a cube on a circular map: you start with a territory, leave a trail as you move, and by reconnecting with your territory you capture new areas. Crossing another player's trail eliminates them, while crossing your own trail results in self-destruction.
+Paper.IO Clone is a project inspired by the popular [Paper.IO](http://paper.io/) game. It combines classic elements from Snake and area-capture genres into a 3D experience using 3JS and React. The core gameplay involves controlling a cube on a circular map: you start with a territory, leave a trail as you move, and by reconnecting with your territory you capture new areas. Crossing another player's trail eliminates them, while crossing your own trail results in self-destruction.
 
 ## Overview
 
@@ -73,7 +73,7 @@ This project is licensed under the MIT License.
 
 ## Acknowledgments
 
-- [Paper.IO](https://games.voodoo.io/paperio2) for the inspiration.
+- [Paper.IO](http://paper.io/) for the inspiration.
 - The 3JS and React communities for excellent resources and tutorials.
 - Tools like Github Copilot and Codium for code assistance.
 - [bolt.new](https://bolt.new/) for streamlining the development setup.
