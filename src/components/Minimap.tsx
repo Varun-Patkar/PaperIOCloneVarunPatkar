@@ -10,9 +10,23 @@ export function Minimap() {
 				{/* Map background */}
 				<div className="absolute inset-0 bg-white-200 rounded-full" />
 
-				{/* Player dot */}
+				{/* Trail */}
+				{player.trail.map(([x, z], index) => (
+					<div
+						key={index}
+						className="absolute w-1.5 h-1.5 rounded-full opacity-70"
+						style={{
+							left: `${((x + 50) / 100) * 100}%`,
+							top: `${((z + 50) / 100) * 100}%`,
+							backgroundColor: player.color,
+							transform: "translate(-50%, -50%)",
+						}}
+					/>
+				))}
+
+				{/* Player dot (larger and more opaque) */}
 				<div
-					className="absolute w-2 h-2 rounded-full transform -translate-x-1/2 -translate-y-1/2"
+					className="absolute w-3 h-3 rounded-full transform -translate-x-1/2 -translate-y-1/2 shadow-md z-10"
 					style={{
 						left: `${((player.position[0] + 50) / 100) * 100}%`,
 						top: `${((player.position[1] + 50) / 100) * 100}%`,

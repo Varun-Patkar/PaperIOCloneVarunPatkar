@@ -68,7 +68,7 @@ export function StartScreen() {
 							<ambientLight intensity={2} />
 							<mesh rotation={[Math.PI / 4, Math.PI / 4, 0]} scale={[2, 2, 2]}>
 								<boxGeometry args={[1, 1, 1]} />
-								<meshToonMaterial color={color} />
+								<meshStandardMaterial color={color} />
 							</mesh>
 							<OrbitControls enableZoom={false} autoRotate />
 						</Canvas>

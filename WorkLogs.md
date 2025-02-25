@@ -49,4 +49,17 @@ This document tracks the progress, challenges, and insights throughout the devel
 
 ---
 
+## 25th Feb 2025
+
+- **Boundary and Trail Enhancements:**
+  - Improved boundary handling:
+    - Prevented the box from glitching out of borders by considering the box size.
+    - Ensured the player direction becomes tangential at the border to hug the border if intended.
+  - Added a favicon for the project.
+  - Implemented an infinite trail system:
+    - The trail continuously follows the player's movement.
+    - Need to add functionality to reset the trail when it intersects itself, similar to the classic snake game mechanic. Have added function in store to reset.
+
+---
+
 _More updates will be logged as development continues._

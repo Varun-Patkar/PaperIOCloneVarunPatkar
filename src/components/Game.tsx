@@ -1,10 +1,10 @@
 import React, { useRef, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGameStore } from "../store";
-import { Player } from "./Player";
 import { GameMap } from "./GameMap";
 import { Minimap } from "./Minimap";
 import * as THREE from "three";
+import { PlayerWithTrail } from "./PlayerWithTrail";
 
 export function Game() {
 	const { updatePlayerDirection } = useGameStore();
@@ -105,7 +105,7 @@ export function Game() {
 				/>
 				<CameraController />
 				<GameMap />
-				<Player ref={playerRef} />
+				<PlayerWithTrail ref={playerRef} />
 			</Canvas>
 			<Minimap />
 		</div>

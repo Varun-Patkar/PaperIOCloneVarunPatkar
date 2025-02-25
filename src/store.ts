@@ -26,12 +26,7 @@ export const useGameStore = create<GameState>((set) => ({
     set((state) => ({
       player: { ...state.player, trail: [...state.player.trail, position] },
     })),
-  convertTrailToTerritory: () =>
-    set((state) => ({
-      player: {
-        ...state.player,
-        territory: [...state.player.territory, ...state.player.trail],
-        trail: [],
-      },
-    })),
+  resetTrail: () => {
+    set((state) => ({ player: { ...state.player, trail: [] } }));
+  }
 }));
