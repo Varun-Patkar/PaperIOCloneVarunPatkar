@@ -6,7 +6,7 @@ export function Minimap() {
 
 	return (
 		<div className="absolute bottom-4 left-4 bg-white/80 rounded-lg p-2 shadow-lg">
-			<div className="relative w-48 h-48 border-2 border-gray-400 rounded-full overflow-hidden">
+			<div className="relative w-32 h-32 sm:w-48 sm:h-48 md:w-80 md:h-80 lg:w-96 lg:h-96 border-2 border-gray-400 rounded-full overflow-hidden">
 				{/* Map background */}
 				<div className="absolute inset-0 bg-white-200 rounded-full" />
 

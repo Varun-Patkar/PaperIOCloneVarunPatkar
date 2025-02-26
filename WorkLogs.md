@@ -47,8 +47,6 @@ This document tracks the progress, challenges, and insights throughout the devel
     - Eliminated abrupt direction switches
     - Maintained constant movement speed during transitions
 
----
-
 ## 25th Feb 2025
 
 - **Boundary and Trail Enhancements:**
@@ -59,6 +57,16 @@ This document tracks the progress, challenges, and insights throughout the devel
   - Implemented an infinite trail system:
     - The trail continuously follows the player's movement.
     - Need to add functionality to reset the trail when it intersects itself, similar to the classic snake game mechanic. Have added function in store to reset.
+
+---
+
+## 26th Feb 2025
+
+- **UI and Trail Logic Improvements:**
+  - Added responsiveness to the play button for better user interaction.
+  - Adjusted the minimap to be more accessible on smaller devices.
+  - Enhanced trail logic:
+    - Implemented functionality to reset the trail upon intersection, triggering a game over state.
 
 ---
 

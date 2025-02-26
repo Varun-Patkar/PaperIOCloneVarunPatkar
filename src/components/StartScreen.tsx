@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useGameStore } from "../store";
-import { Gamepad2 } from "lucide-react";
+import { Gamepad2, Play } from "lucide-react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { toast, ToastContainer } from "react-toastify";
@@ -10,9 +10,10 @@ export function StartScreen() {
 	const { setPlayerName, setPlayerColor, startGame } = useGameStore();
 	const [color, setColor] = useState("#ff0000");
 	const [name, setName] = useState("");
+	const nameRef = useRef(name);
 
 	const handleStartGame = () => {
-		if (!name) {
+		if (!nameRef.current) {
 			toast.error("Please fill the name field", {
 				position: "bottom-right",
 				autoClose: 3000,
@@ -26,6 +27,7 @@ export function StartScreen() {
 		}
 		startGame();
 	};
+
 	const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const newColor = e.target.value;
 		setColor(newColor);
@@ -35,8 +37,22 @@ export function StartScreen() {
 	const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const newName = e.target.value;
 		setName(newName);
+		nameRef.current = newName;
 		setPlayerName(newName);
 	};
+
+	const handleKeyPress = (e: KeyboardEvent) => {
+		if (e.key === "Enter") {
+			handleStartGame();
+		}
+	};
+
+	useEffect(() => {
+		window.addEventListener("keypress", handleKeyPress);
+		return () => {
+			window.removeEventListener("keypress", handleKeyPress);
+		};
+	}, []);
 
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center p-4">
@@ -83,15 +99,18 @@ export function StartScreen() {
 							onChange={handleColorChange}
 							className="w-full h-12 p-1 border border-gray-300 rounded-md cursor-pointer"
 						/>
+					</div>
+					<div className="flex justify-center mt-4">
 						<button
 							onClick={handleStartGame}
-							className={`w-full py-3 rounded-md font-medium transition-colors mt-3 ${
+							className={`w-16 h-16 md:w-32 md:h-12 rounded-full md:rounded-lg flex items-center justify-center font-medium transition-colors ${
 								name
 									? "bg-indigo-600 text-white hover:bg-indigo-700"
 									: "bg-gray-400 text-gray-700"
 							}`}
 						>
-							Start Game
+							<Play className="w-8 h-8 block md:hidden" />
+							<span className="hidden md:block">Play Game</span>
 						</button>
 					</div>
 				</div>

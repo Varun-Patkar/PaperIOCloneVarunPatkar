@@ -27,6 +27,11 @@ export const useGameStore = create<GameState>((set) => ({
       player: { ...state.player, trail: [...state.player.trail, position] },
     })),
   resetTrail: () => {
-    set((state) => ({ player: { ...state.player, trail: [] } }));
+    set((state) => ({
+      player: {
+        ...state.player,
+        trail: state.player.trail.length > 0 ? [state.player.trail[state.player.trail.length - 1]] : [],
+      },
+    }));
   }
 }));

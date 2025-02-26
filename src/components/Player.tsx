@@ -21,9 +21,40 @@ const getAngleDifference = (current: number, target: number): number => {
 	return diff;
 };
 
+// Helper function to check if two line segments intersect
+const doSegmentsIntersect = (
+	p1: [number, number],
+	p2: [number, number],
+	p3: [number, number],
+	p4: [number, number]
+): boolean => {
+	// Calculate denominator for intersection formula
+	const den =
+		(p4[1] - p3[1]) * (p2[0] - p1[0]) - (p4[0] - p3[0]) * (p2[1] - p1[1]);
+
+	// Lines are parallel or collinear
+	if (den === 0) return false;
+
+	// Calculate numerators
+	const ua =
+		((p4[0] - p3[0]) * (p1[1] - p3[1]) - (p4[1] - p3[1]) * (p1[0] - p3[0])) /
+		den;
+	const ub =
+		((p2[0] - p1[0]) * (p1[1] - p3[1]) - (p2[1] - p1[1]) * (p1[0] - p3[0])) /
+		den;
+
+	// Check if intersection point is within both line segments
+	return ua > 0 && ua < 1 && ub > 0 && ub < 1;
+};
+
 export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
-	const { player, updatePlayerPosition, updatePlayerDirection, addToTrail } =
-		useGameStore();
+	const {
+		player,
+		updatePlayerPosition,
+		updatePlayerDirection,
+		addToTrail,
+		resetTrail,
+	} = useGameStore();
 	const groupRef = useRef<THREE.Group>(null);
 	const currentDirection = useRef(
 		new THREE.Vector2(player.direction[0], player.direction[1])
@@ -44,9 +75,37 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 			lastTrailUpdate.current = 0;
 			if (groupRef.current) {
 				const pos = groupRef.current.position;
-				addToTrail([pos.x, pos.z]);
+				const newPoint: [number, number] = [pos.x, pos.z];
+
+				// Check for self-intersection before adding the new point
+				if (player.trail.length >= 3) {
+					const prevPoint = player.trail[player.trail.length - 1];
+
+					// Check newest segment against all previous segments (except adjacent)
+					for (let i = 0; i < player.trail.length - 2; i++) {
+						if (
+							doSegmentsIntersect(
+								prevPoint,
+								newPoint,
+								player.trail[i],
+								player.trail[i + 1]
+							)
+						) {
+							// Self-intersection detected, reset trail
+							resetTrail();
+							// Add the current position as first point in new trail
+							addToTrail(newPoint);
+							return;
+						}
+					}
+				}
+
+				// No intersection, add point normally
+				addToTrail(newPoint);
 			}
 		}
+
+		// Rest of the movement and position update code...
 		if (groupRef.current) {
 			const targetDirection = new THREE.Vector2(
 				player.direction[0],
