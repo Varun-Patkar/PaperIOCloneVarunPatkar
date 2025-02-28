@@ -72,7 +72,7 @@ This document tracks the progress, challenges, and insights throughout the devel
 
 - **Territory and Trail System Integration:**
   - Implemented territory visualization:
-    - Added display of player's territory as a colored shape on the map.
+    - Added display of player's territory as a colored shape on the Game Map.
     - Applied proper transparency and rendering attributes for visual clarity.
     - Ensured territory appears directly on the map plane with correct orientation.
   - Enhanced trail mechanics:
