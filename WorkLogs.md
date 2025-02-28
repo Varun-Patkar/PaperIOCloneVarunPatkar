@@ -68,6 +68,28 @@ This document tracks the progress, challenges, and insights throughout the devel
   - Enhanced trail logic:
     - Implemented functionality to reset the trail upon intersection, triggering a game over state.
 
+## 28th Feb 2025
+
+- **Territory and Trail System Integration:**
+  - Implemented territory visualization:
+    - Added display of player's territory as a colored shape on the map.
+    - Applied proper transparency and rendering attributes for visual clarity.
+    - Ensured territory appears directly on the map plane with correct orientation.
+  - Enhanced trail mechanics:
+    - Modified trail system to only track and display when player moves outside territory.
+    - Implemented ray casting algorithm to accurately detect when player enters or exits territory.
+    - Ensured trail automatically resets when re-entering territory after creating a loop.
+  - Added territory expansion logic:
+    - Integrated martinez-polygon-clipping library to calculate union of territory and trail loop.
+    - Implemented territory conquering when player successfully returns to their territory.
+    - Noted current implementation has precision issues with complex polygon merging.
+  - Technical challenges:
+    - Trail visualization required special handling to maintain flat orientation on XZ plane.
+    - Identified need for more robust polygon clipping solution for complex territory shapes.
+    - Currently monitoring performance impact of frequent territory recalculation.
+
+![VarunPaperIO - 28-02-2025](media/VarunPaperIO-28-02-2025.mp4)
+
 ---
 
 _More updates will be logged as development continues._

@@ -17,4 +17,5 @@ export interface GameState {
   updatePlayerDirection: (direction: [number, number]) => void;
   addToTrail: (position: [number, number]) => void;
   resetTrail: () => void;
+  conquerTerritory: () => void;
 }

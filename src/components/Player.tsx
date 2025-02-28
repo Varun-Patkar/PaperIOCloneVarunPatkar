@@ -21,6 +21,27 @@ const getAngleDifference = (current: number, target: number): number => {
 	return diff;
 };
 
+// Helper function to check if a point is inside a polygon using ray casting
+const isPointInPolygon = (
+	point: [number, number],
+	polygon: [number, number][]
+): boolean => {
+	let inside = false;
+	for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+		const xi = polygon[i][0],
+			yi = polygon[i][1];
+		const xj = polygon[j][0],
+			yj = polygon[j][1];
+
+		const intersect =
+			yi > point[1] !== yj > point[1] &&
+			point[0] < ((xj - xi) * (point[1] - yi)) / (yj - yi) + xi;
+
+		if (intersect) inside = !inside;
+	}
+	return inside;
+};
+
 // Helper function to check if two line segments intersect
 const doSegmentsIntersect = (
 	p1: [number, number],
@@ -54,7 +75,9 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 		updatePlayerDirection,
 		addToTrail,
 		resetTrail,
+		conquerTerritory,
 	} = useGameStore();
+
 	const groupRef = useRef<THREE.Group>(null);
 	const currentDirection = useRef(
 		new THREE.Vector2(player.direction[0], player.direction[1])
@@ -64,6 +87,9 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 	const moveSpeed = 0.05;
 	const targetAngle = useRef(0);
 	const currentAngle = useRef(0);
+
+	// Track if player is inside territory
+	const wasInsideTerritory = useRef(true);
 
 	useEffect(() => {
 		currentDirection.current.set(player.direction[0], player.direction[1]);
@@ -75,37 +101,59 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 			lastTrailUpdate.current = 0;
 			if (groupRef.current) {
 				const pos = groupRef.current.position;
-				const newPoint: [number, number] = [pos.x, pos.z];
+				const currentPosition: [number, number] = [pos.x, pos.z];
 
-				// Check for self-intersection before adding the new point
-				if (player.trail.length >= 3) {
-					const prevPoint = player.trail[player.trail.length - 1];
+				// Check if point is inside territory using ray casting
+				const isInside = isPointInPolygon(currentPosition, player.territory);
 
-					// Check newest segment against all previous segments (except adjacent)
-					for (let i = 0; i < player.trail.length - 2; i++) {
-						if (
-							doSegmentsIntersect(
-								prevPoint,
-								newPoint,
-								player.trail[i],
-								player.trail[i + 1]
-							)
-						) {
-							// Self-intersection detected, reset trail
-							resetTrail();
-							// Add the current position as first point in new trail
-							addToTrail(newPoint);
-							return;
+				if (isInside) {
+					// Player is inside territory
+					if (!wasInsideTerritory.current && player.trail.length > 1) {
+						conquerTerritory();
+						// For now, just reset the trail when re-entering territory
+						resetTrail();
+					}
+
+					// No need to add to trail while inside territory
+					wasInsideTerritory.current = true;
+				} else {
+					if (wasInsideTerritory.current) {
+						addToTrail(currentPosition);
+						resetTrail();
+					}
+					// Player is outside territory
+					wasInsideTerritory.current = false;
+
+					// Check for self-intersection before adding the new point
+					if (player.trail.length >= 3) {
+						const prevPoint = player.trail[player.trail.length - 1];
+
+						// Check newest segment against all previous segments (except adjacent)
+						for (let i = 0; i < player.trail.length - 2; i++) {
+							if (
+								doSegmentsIntersect(
+									prevPoint,
+									currentPosition,
+									player.trail[i],
+									player.trail[i + 1]
+								)
+							) {
+								// Self-intersection detected, reset trail
+								resetTrail();
+								// Add the current position as first point in new trail
+								addToTrail(currentPosition);
+								return;
+							}
 						}
 					}
-				}
 
-				// No intersection, add point normally
-				addToTrail(newPoint);
+					// Outside territory, add point to trail
+					addToTrail(currentPosition);
+				}
 			}
 		}
 
-		// Rest of the movement and position update code...
+		// Movement code
 		if (groupRef.current) {
 			const targetDirection = new THREE.Vector2(
 				player.direction[0],
