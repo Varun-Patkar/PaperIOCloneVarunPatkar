@@ -88,7 +88,7 @@ This document tracks the progress, challenges, and insights throughout the devel
     - Identified need for more robust polygon clipping solution for complex territory shapes.
     - Currently monitoring performance impact of frequent territory recalculation.
 
-![VarunPaperIO - 28-02-2025](media/VarunPaperIO-28-02-2025.gif)
+![VarunPaperIO - 28-02-2025](media/VarunPaperIO%20-%2028-02-2025.gif)
 
 ---
 
