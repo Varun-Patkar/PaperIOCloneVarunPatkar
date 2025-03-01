@@ -76,6 +76,10 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 		addToTrail,
 		resetTrail,
 		conquerTerritory,
+		setGameOver,
+		getDisplayPercentage,
+		isGameOver,
+		gameStarted,
 	} = useGameStore();
 
 	const groupRef = useRef<THREE.Group>(null);
@@ -91,6 +95,21 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 	// Track if player is inside territory
 	const wasInsideTerritory = useRef(true);
 
+	useEffect(() => {
+		// Reset position when game is reset but still active
+		if (gameStarted && !isGameOver) {
+			if (groupRef.current) {
+				// Make sure the Three.js object position is reset
+				groupRef.current.position.set(
+					player.position[0],
+					0,
+					player.position[1]
+				);
+			}
+		}
+	}, [gameStarted, isGameOver, player.position]);
+
+	// Existing effect for direction
 	useEffect(() => {
 		currentDirection.current.set(player.direction[0], player.direction[1]);
 	}, [player.direction]);
@@ -138,10 +157,8 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 									player.trail[i + 1]
 								)
 							) {
-								// Self-intersection detected, reset trail
-								resetTrail();
-								// Add the current position as first point in new trail
-								addToTrail(currentPosition);
+								// Self-intersection detected - GAME OVER
+								setGameOver(false); // Not a victory
 								return;
 							}
 						}
@@ -154,7 +171,7 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 		}
 
 		// Movement code
-		if (groupRef.current) {
+		if (groupRef.current && gameStarted && !isGameOver) {
 			const targetDirection = new THREE.Vector2(
 				player.direction[0],
 				player.direction[1]
@@ -168,7 +185,10 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 				currentAngle.current,
 				targetAngle.current
 			);
-
+			const displayPercentage = getDisplayPercentage();
+			if (displayPercentage >= 100) {
+				setGameOver(true); // Victory!
+			}
 			const maxRotationPerFrame = (Math.PI / 4) * (delta / ROTATION_TIME);
 			const rotation =
 				Math.min(Math.abs(angleDiff), maxRotationPerFrame) *
@@ -217,14 +237,17 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 
 				updatePlayerDirection([newTangent.x, newTangent.y]);
 			}
-
-			groupRef.current.position.set(
-				newPosition.x,
-				newPosition.y,
-				newPosition.z
-			);
-			updatePlayerPosition([newPosition.x, newPosition.z]);
-
+			if (gameStarted && !isGameOver) {
+				groupRef.current.position.set(
+					newPosition.x,
+					newPosition.y,
+					newPosition.z
+				);
+				updatePlayerPosition([newPosition.x, newPosition.z]);
+			} else {
+				groupRef.current.position.set(0, 0, 0);
+				updatePlayerPosition([0, 0]);
+			}
 			if (boxRef.current) {
 				boxRef.current.rotation.y = currentAngle.current;
 			}

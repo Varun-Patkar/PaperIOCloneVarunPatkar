@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { GameState, PlayerState } from './types';
 import * as martinez from 'martinez-polygon-clipping';
-
+const MAX_TERRITORY_PERCENTAGE = 97;
 // Helper function to create a circle of points
 const createCircleTerritory = (radius: number, numPoints: number = 128): [number, number][] => {
   const points: [number, number][] = [];
@@ -15,18 +15,128 @@ const createCircleTerritory = (radius: number, numPoints: number = 128): [number
   return points;
 };
 
+// Helper function to ensure polygon is closed (first point = last point)
+const closePolygon = (points: [number, number][]): [number, number][] => {
+  if (points.length < 3) return points;
+
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    return [...points, [first[0], first[1]]];
+  }
+  return points;
+};
+
+// Helper function to compute centroid of a polygon
+const computeCentroid = (points: [number, number][]): [number, number] => {
+  let x = 0, y = 0;
+  for (const [px, py] of points) {
+    x += px;
+    y += py;
+  }
+  return [x / points.length, y / points.length];
+};
+
+// Point-in-polygon test using ray casting
+const pointInPolygon = (point: [number, number], polygon: [number, number][]): boolean => {
+  const [x, y] = point;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+
+    const intersect = ((yi > y) !== (yj > y)) &&
+      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
 const initialPlayerState: PlayerState = {
   name: '',
   color: '#ff0000',
   position: [0, 0],
   direction: [1, 0],
-  territory: createCircleTerritory(3), // Initialize with a circle of radius 3
+  territory: createCircleTerritory(5),
   trail: [],
 };
+// Add this helper function for area calculation
+const calculatePolygonArea = (points: [number, number][]): number => {
+  if (points.length < 3) return 0;
 
-export const useGameStore = create<GameState>((set) => ({
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    area += points[i][0] * points[j][1];
+    area -= points[j][0] * points[i][1];
+  }
+
+  return Math.abs(area) / 2;
+};
+export const useGameStore = create<GameState>((set, get) => ({
   player: initialPlayerState,
   gameStarted: false,
+  isGameOver: false,
+  isVictory: false,      // Add this
+  personalBest: 0,       // Add this
+  getTerritoryArea: () => {
+    const state = get();
+    const closedTerritory = closePolygon([...state.player.territory]);
+    return calculatePolygonArea(closedTerritory);
+  },
+
+  // New method to get display percentage (scaled)
+  getDisplayPercentage: () => {
+    const state = get();
+    const totalGameArea = Math.PI * 50 * 50;
+    const actualPercentage = (state.getTerritoryArea() / totalGameArea) * 100;
+
+    // Scale so that 97% actual = 100% display
+    const scaledPercentage = (actualPercentage / MAX_TERRITORY_PERCENTAGE) * 100;
+    const displayPercentage = Math.min(100, scaledPercentage);
+
+    // Update personal best if the display percentage is higher
+    if (displayPercentage > state.personalBest) {
+      set({ personalBest: displayPercentage });
+    }
+
+    return displayPercentage;
+  },
+
+  // Fix the goHome method
+  goHome: () => {
+    set({ gameStarted: false, isGameOver: false });
+    get().resetGame(); // Use get() to access the method properly
+  },
+  // Game over function
+  setGameOver: (isVictory = false) =>
+    set(state => {
+      const totalGameArea = Math.PI * 50 * 50;
+      const actualPercentage = (state.getTerritoryArea() / totalGameArea) * 100;
+
+      return {
+        isGameOver: true,
+        isVictory,
+        personalBest: Math.max(state.personalBest, actualPercentage)
+      };
+    }),
+  // Reset game function  
+  resetGame: () =>
+    set(state => ({
+      player: {
+        ...initialPlayerState,
+        name: state.player.name,  // Preserve player name
+        color: state.player.color,
+        direction: [1, 0],
+        trail: [],
+        position: [0, 0],
+        territory: createCircleTerritory(5)
+      },
+      isGameOver: false,
+      isVictory: false,
+      personalBest: state.personalBest,
+    })),
   setPlayerName: (name) =>
     set((state) => ({ player: { ...state.player, name } })),
   setPlayerColor: (color) =>
@@ -56,65 +166,135 @@ export const useGameStore = create<GameState>((set) => ({
       }
 
       try {
-        // Find the first and last points of the trail
-        const firstTrailPoint = state.player.trail[0];
-        const lastTrailPoint = state.player.trail[state.player.trail.length - 1];
+        // Get the territory and make sure it's closed
+        const closedTerritory = closePolygon([...state.player.territory]);
 
-        // Create a complete polygon from the trail by finding connection points to the territory
-        let closestStartIndex = 0;
-        let closestEndIndex = 0;
-        let minStartDistance = Number.MAX_VALUE;
-        let minEndDistance = Number.MAX_VALUE;
+        // Get the trail points
+        const trail = [...state.player.trail];
 
-        // Find the closest territory points to connect the trail
-        state.player.territory.forEach((point, index) => {
+        // Find insertion points in the territory for the trail endpoints
+        const firstTrailPoint = trail[0];
+        const lastTrailPoint = trail[trail.length - 1];
+
+        // Find the closest territory points to trail endpoints
+        // Without using KD-tree (which is causing issues)
+        let startIdx = 0;
+        let endIdx = 0;
+        let minStartDist = Infinity;
+        let minEndDist = Infinity;
+
+        // Find closest points by simple loop
+        for (let i = 0; i < closedTerritory.length; i++) {
+          const tPoint = closedTerritory[i];
+
           // Distance to first trail point
-          const startDist = Math.hypot(point[0] - firstTrailPoint[0], point[1] - firstTrailPoint[1]);
-          if (startDist < minStartDistance) {
-            minStartDistance = startDist;
-            closestStartIndex = index;
+          const distToStart = Math.pow(tPoint[0] - firstTrailPoint[0], 2) +
+            Math.pow(tPoint[1] - firstTrailPoint[1], 2);
+          if (distToStart < minStartDist) {
+            minStartDist = distToStart;
+            startIdx = i;
           }
 
           // Distance to last trail point
-          const endDist = Math.hypot(point[0] - lastTrailPoint[0], point[1] - lastTrailPoint[1]);
-          if (endDist < minEndDistance) {
-            minEndDistance = endDist;
-            closestEndIndex = index;
+          const distToEnd = Math.pow(tPoint[0] - lastTrailPoint[0], 2) +
+            Math.pow(tPoint[1] - lastTrailPoint[1], 2);
+          if (distToEnd < minEndDist) {
+            minEndDist = distToEnd;
+            endIdx = i;
           }
-        });
-
-        // Form the trail polygon by connecting it to territory
-        const trailPolygon: [number, number][] = [...state.player.trail];
-
-        // Extract portion of territory that connects the trail
-        let territorySegment: [number, number][] = [];
-        if (closestEndIndex >= closestStartIndex) {
-          territorySegment = state.player.territory.slice(closestEndIndex, state.player.territory.length)
-            .concat(state.player.territory.slice(0, closestStartIndex + 1));
-        } else {
-          territorySegment = state.player.territory.slice(closestEndIndex, closestStartIndex + 1);
         }
 
-        // Complete the trail polygon
-        const completeTrailPolygon = [...trailPolygon, ...territorySegment];
+        // Ensure proper ordering
+        if (startIdx > endIdx) {
+          // Swap if needed
+          [startIdx, endIdx] = [endIdx, startIdx];
+        }
 
+        // Create a new boundary by taking:
+        // - territory points from 0 to startIdx
+        // - then the entire trail
+        // - then territory points from endIdx to end
+        const newBoundary = [
+          ...closedTerritory.slice(0, startIdx + 1),
+          ...trail,
+          ...closedTerritory.slice(endIdx)
+        ];
+
+        const closedNewBoundary = closePolygon(newBoundary);
+
+        // Compute union of original territory and new boundary
         // Convert to martinez format (array of arrays for polygons with holes)
-        const territoryPolygon = [state.player.territory];
-        const newTrailPolygon = [completeTrailPolygon];
+        const territoryPolygon = [closedTerritory];
+        const newBoundaryPolygon = [closedNewBoundary];
 
-        // Compute union using martinez
-        const unionResult = martinez.union(territoryPolygon, newTrailPolygon);
+        const unionResult = martinez.union(territoryPolygon, newBoundaryPolygon);
 
-        // The result might have multiple polygons; take the first one
-        // (in a real game, you might want to handle multiple polygons differently)
-        const newTerritory = unionResult[0][0] as [number, number][];
+        // Handle the result
+        // Fix for the mergedPolygon assignment and type issues
 
-        // Return the updated state with new territory and reset the trail
+        // In the conquerTerritory function where you handle unionResult:
+        let mergedPolygon: [number, number][] = [];
+
+        if (!unionResult || unionResult.length === 0) {
+          // Fallback to new boundary if union fails
+          mergedPolygon = closedNewBoundary;
+        } else if (unionResult.length === 1 && unionResult[0].length === 1) {
+          // Single polygon without holes
+          // Ensure proper type conversion for each point
+          mergedPolygon = unionResult[0][0].map((point: any): [number, number] => {
+            // Ensure point is in the correct format [number, number]
+            if (Array.isArray(point) && point.length >= 2) {
+              return [point[0], point[1]];
+            }
+            // Handle unexpected format - return a safe default
+            console.warn('Unexpected point format in polygon result', point);
+            return [0, 0];
+          });
+        } else {
+          // For multi-polygons, choose the one containing the original centroid
+          const centroid = computeCentroid(closedTerritory);
+          let foundPolygon = false;
+
+          for (const poly of unionResult) {
+            // Each poly may be an array (outer ring + holes)
+            if (poly[0]) {
+              const outerRing = poly[0].map((point: any): [number, number] => {
+                if (Array.isArray(point) && point.length >= 2) {
+                  return [point[0], point[1]];
+                }
+                return [0, 0];
+              });
+
+              if (pointInPolygon(centroid, outerRing)) {
+                mergedPolygon = outerRing;
+                foundPolygon = true;
+                break;
+              }
+            }
+          }
+
+          if (!foundPolygon) {
+            // Just take the first polygon if we can't find one with the centroid
+            if (unionResult[0]?.[0]) {
+              mergedPolygon = unionResult[0][0].map((point: any): [number, number] => {
+                if (Array.isArray(point) && point.length >= 2) {
+                  return [point[0], point[1]];
+                }
+                return [0, 0];
+              });
+            } else {
+              // Ultimate fallback
+              mergedPolygon = closedTerritory;
+            }
+          }
+        }
+
+        // Return the updated state with new territory
         return {
           player: {
             ...state.player,
-            territory: newTerritory,
-            trail: [],
+            territory: mergedPolygon || closedTerritory, // Fallback to original if all else fails
+            trail: [], // Clear the trail after conquest
           },
         };
       } catch (error) {
