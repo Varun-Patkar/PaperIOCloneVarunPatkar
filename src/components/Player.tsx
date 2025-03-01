@@ -22,6 +22,7 @@ const getAngleDifference = (current: number, target: number): number => {
 };
 
 // Helper function to check if a point is inside a polygon using ray casting
+const BASE_MOVE_SPEED = 8.0; // 3 units per second
 const isPointInPolygon = (
 	point: [number, number],
 	polygon: [number, number][]
@@ -199,6 +200,9 @@ export const Player = forwardRef<THREE.Group, {}>((props, ref) => {
 				Math.sin(currentAngle.current),
 				Math.cos(currentAngle.current)
 			);
+
+			// Calculate movement speed adjusted by delta time
+			const moveSpeed = BASE_MOVE_SPEED * delta;
 
 			let newPosition = new THREE.Vector3(
 				groupRef.current.position.x + currentDirection.current.x * moveSpeed,

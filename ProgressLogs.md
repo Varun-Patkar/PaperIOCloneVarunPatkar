@@ -113,6 +113,7 @@ This document tracks the progress, challenges, and insights throughout the devel
     - Enhanced styling with gradient colors and clear visual hierarchy
     - Fixed TypeScript errors in store implementation
   - Added Joystick for Mobile Controls
+  - Updated to have constant speed across devices.
 
 ![VarunPaperIO - 29-02-2025](media/VarunPaperIO%20-%2001-03-2025.gif)
 

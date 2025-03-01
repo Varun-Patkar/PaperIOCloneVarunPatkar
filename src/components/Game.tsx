@@ -68,19 +68,11 @@ const VirtualJoystick = ({ onDirectionChange }: VirtualJoystickProps) => {
 			updateJoystickPosition(e.touches[0].clientX, e.touches[0].clientY);
 		}
 	};
-
-	/*************  ✨ Codeium Command ⭐  *************/
-	/**
-	 * Handles touch end event.
-	 * Resets joystick state and sends neutral direction ([0, 0])
-	 * to the game engine.
-	 */
-	/******  63ebeeca-4694-49e8-a203-a893392daa9d  *******/ const handleTouchEnd =
-		() => {
-			setActive(false);
-			setPosition({ x: 0, y: 0 });
-			onDirectionChange([0, 0]);
-		};
+	const handleTouchEnd = () => {
+		setActive(false);
+		setPosition({ x: 0, y: 0 });
+		onDirectionChange([0, 0]);
+	};
 
 	return (
 		<div className="md:hidden fixed bottom-20 right-12 z-10">
