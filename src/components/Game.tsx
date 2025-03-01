@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGameStore } from "../store";
 import { GameMap } from "./GameMap";
@@ -6,7 +6,103 @@ import { Minimap } from "./Minimap";
 import * as THREE from "three";
 import { PlayerWithTrail } from "./PlayerWithTrail";
 import { GameOverScreen } from "./GameOverScreen";
+// Define proper types for the joystick props
+interface VirtualJoystickProps {
+	onDirectionChange: (direction: [number, number]) => void;
+}
 
+// Virtual Joystick Component for mobile devices
+const VirtualJoystick = ({ onDirectionChange }: VirtualJoystickProps) => {
+	const joystickRef = useRef<HTMLDivElement>(null);
+	const knobRef = useRef<HTMLDivElement>(null);
+	const [active, setActive] = useState(false);
+	const [position, setPosition] = useState({ x: 0, y: 0 });
+	const maxDistance = 40; // Maximum distance the joystick can move
+
+	// Function to calculate joystick position and direction
+	const updateJoystickPosition = (clientX: number, clientY: number) => {
+		if (!joystickRef.current || !active) return;
+
+		const rect = joystickRef.current.getBoundingClientRect();
+		const centerX = rect.left + rect.width / 2;
+		const centerY = rect.top + rect.height / 2;
+
+		// Calculate distance from center
+		let deltaX = clientX - centerX;
+		let deltaY = clientY - centerY;
+
+		// Calculate distance
+		const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+		// Normalize if beyond max distance
+		if (distance > maxDistance) {
+			deltaX = (deltaX / distance) * maxDistance;
+			deltaY = (deltaY / distance) * maxDistance;
+		}
+
+		// Update knob position
+		setPosition({ x: deltaX, y: deltaY });
+
+		// Calculate direction vector and normalize
+		const dirX = deltaX / (distance || 1); // Avoid division by zero
+		const dirY = deltaY / (distance || 1);
+
+		// Only send direction update if joystick is moved significantly
+		if (distance > 5) {
+			onDirectionChange([dirX, dirY]); // Negate X for proper left/right mapping
+		} else {
+			onDirectionChange([0, 0]); // No movement if joystick is centered
+		}
+	};
+
+	// Touch event handlers
+	const handleTouchStart = (e: React.TouchEvent) => {
+		e.preventDefault();
+		setActive(true);
+		updateJoystickPosition(e.touches[0].clientX, e.touches[0].clientY);
+	};
+
+	const handleTouchMove = (e: React.TouchEvent) => {
+		e.preventDefault();
+		if (active) {
+			updateJoystickPosition(e.touches[0].clientX, e.touches[0].clientY);
+		}
+	};
+
+	/*************  ✨ Codeium Command ⭐  *************/
+	/**
+	 * Handles touch end event.
+	 * Resets joystick state and sends neutral direction ([0, 0])
+	 * to the game engine.
+	 */
+	/******  63ebeeca-4694-49e8-a203-a893392daa9d  *******/ const handleTouchEnd =
+		() => {
+			setActive(false);
+			setPosition({ x: 0, y: 0 });
+			onDirectionChange([0, 0]);
+		};
+
+	return (
+		<div className="md:hidden fixed bottom-20 right-12 z-10">
+			<div
+				ref={joystickRef}
+				className="w-32 h-32 rounded-full bg-black bg-opacity-25 border-2 border-white border-opacity-30 flex items-center justify-center"
+				onTouchStart={handleTouchStart}
+				onTouchMove={handleTouchMove}
+				onTouchEnd={handleTouchEnd}
+			>
+				<div
+					ref={knobRef}
+					className="w-16 h-16 rounded-full bg-white bg-opacity-50 shadow-lg"
+					style={{
+						transform: `translate(${position.x}px, ${position.y}px)`,
+						transition: active ? "none" : "transform 0.2s ease-out",
+					}}
+				></div>
+			</div>
+		</div>
+	);
+};
 // Progress bar component to display territory percentage
 const TerritoryProgress = () => {
 	const getDisplayPercentage = useGameStore(
@@ -127,16 +223,26 @@ export function Game() {
 		const updateDirection = () => {
 			let newDirection = new THREE.Vector2(0, 0);
 
-			if (keysPressed.current.has("w")) {
+			// Support both WASD and arrow keys
+			if (keysPressed.current.has("w") || keysPressed.current.has("arrowup")) {
 				newDirection.y = -1;
 			}
-			if (keysPressed.current.has("s")) {
+			if (
+				keysPressed.current.has("s") ||
+				keysPressed.current.has("arrowdown")
+			) {
 				newDirection.y = 1;
 			}
-			if (keysPressed.current.has("a")) {
+			if (
+				keysPressed.current.has("a") ||
+				keysPressed.current.has("arrowleft")
+			) {
 				newDirection.x = -1;
 			}
-			if (keysPressed.current.has("d")) {
+			if (
+				keysPressed.current.has("d") ||
+				keysPressed.current.has("arrowright")
+			) {
 				newDirection.x = 1;
 			}
 
@@ -162,6 +268,16 @@ export function Game() {
 			window.removeEventListener("keyup", handleKeyUp);
 		};
 	}, [updatePlayerDirection]);
+	const handleJoystickDirection = (direction: [number, number]) => {
+		if (direction[0] === 0 && direction[1] === 0) {
+			// If joystick is centered, use last direction
+			updatePlayerDirection([lastDirection.current.x, lastDirection.current.y]);
+		} else {
+			// Update direction based on joystick
+			lastDirection.current.set(direction[0], direction[1]);
+			updatePlayerDirection(direction);
+		}
+	};
 	const CameraController = () => {
 		const CAMERA_HEIGHT = 12; // Height of camera
 		const CAMERA_DISTANCE = 15; // Distance from player
@@ -212,6 +328,7 @@ export function Game() {
 
 			{/* Add the territory progress bar */}
 			<TerritoryProgress />
+			<VirtualJoystick onDirectionChange={handleJoystickDirection} />
 			<GameOverScreen />
 		</div>
 	);
