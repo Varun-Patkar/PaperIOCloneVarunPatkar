@@ -75,7 +75,7 @@ const VirtualJoystick = ({ onDirectionChange }: VirtualJoystickProps) => {
 	};
 
 	return (
-		<div className="md:hidden fixed bottom-20 right-12 z-10">
+		<div className="md:hidden fixed bottom-20 right-12 z-10 joystick-container">
 			<div
 				ref={joystickRef}
 				className="w-32 h-32 rounded-full bg-black bg-opacity-25 border-2 border-white border-opacity-30 flex items-center justify-center"
