@@ -18,6 +18,7 @@ export interface GameState {
   setGameOver: (isVictory?: boolean) => void;
   resetGame: () => void;
   setPlayerName: (name: string) => void;
+  updatePersonalBest: () => void;
   setPlayerColor: (color: string) => void;
   startGame: () => void;
   goHome: () => void;
@@ -26,4 +27,5 @@ export interface GameState {
   addToTrail: (position: [number, number]) => void;
   resetTrail: () => void;
   conquerTerritory: () => void;
+  updatePersonalBestScore: (percentage: number) => void;
 }

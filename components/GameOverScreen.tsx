@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { useGameStore } from "../store";
+import axios from "axios";
 
 export const GameOverScreen = () => {
 	const {
@@ -8,14 +10,28 @@ export const GameOverScreen = () => {
 		getDisplayPercentage,
 		resetGame,
 		goHome,
-		updatePlayerPosition,
 	} = useGameStore();
 
-	if (!isGameOver) return null;
-
-	const currentPercentage = getDisplayPercentage().toFixed(1);
+	const currentPercentage = getDisplayPercentage();
 	const bestPercentage = personalBest.toFixed(1);
 	const scaledBest = parseFloat(bestPercentage).toFixed(1);
+
+	// Save score to database when game ends
+	useEffect(() => {
+		if (isGameOver) {
+			// Only save scores for authenticated users
+			axios
+				.post("/api/user/score", { score: currentPercentage })
+				.catch((err) => {
+					if (err.response?.status !== 401) {
+						console.error("Error saving score:", err);
+					}
+					// For 401, we just silently handle it as a not logged in case
+				});
+		}
+	}, [isGameOver, currentPercentage]);
+
+	if (!isGameOver) return null;
 
 	return (
 		<div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
@@ -45,12 +61,12 @@ export const GameOverScreen = () => {
 						<h1 className="text-4xl font-bold text-red-500 mb-4">GAME OVER</h1>
 						<p className="text-xl text-gray-300 mb-6">
 							You crashed into your own trail! But you still managed to conquer{" "}
-							{currentPercentage}% of the map.
+							{currentPercentage.toFixed(1)}% of the map.
 						</p>
 						<div className="mb-4 p-4 bg-gray-800 rounded-lg">
 							<p className="text-lg text-gray-400">Final Territory</p>
 							<p className="text-3xl font-bold text-blue-400">
-								{currentPercentage}%
+								{currentPercentage.toFixed(1)}%
 							</p>
 						</div>
 					</>
@@ -59,7 +75,7 @@ export const GameOverScreen = () => {
 				<div className="mb-8 p-4 bg-gray-800 rounded-lg">
 					<p className="text-lg text-gray-400">Personal Best</p>
 					<p className="text-3xl font-bold text-yellow-400">
-						{isNaN(personalBest) ? currentPercentage : scaledBest}%
+						{isNaN(personalBest) ? currentPercentage.toFixed(1) : scaledBest}%
 					</p>
 				</div>
 

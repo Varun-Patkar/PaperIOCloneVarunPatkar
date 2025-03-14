@@ -101,6 +101,7 @@ const TerritoryProgress = () => {
 		(state) => state.getDisplayPercentage
 	);
 	const personalBest = useGameStore((state) => state.personalBest);
+	const updatePersonalBest = useGameStore((state) => state.updatePersonalBest);
 	const [prevPercentage, setPrevPercentage] = React.useState(0);
 	const [floatingTexts, setFloatingTexts] = React.useState<
 		Array<{ id: number; value: string; opacity: number; top: number }>
@@ -115,6 +116,9 @@ const TerritoryProgress = () => {
 	const scaledPersonalBest = personalBest;
 	const formattedPersonalBest = personalBest.toFixed(1);
 
+	React.useEffect(() => {
+		updatePersonalBest();
+	}, [updatePersonalBest, displayPercentage]);
 	// Check for changes to add floating text
 	React.useEffect(() => {
 		const numPercentage = parseFloat(formattedPercentage);
