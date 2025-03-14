@@ -119,4 +119,30 @@ This document tracks the progress, challenges, and insights throughout the devel
 
 ---
 
+## 14th Mar 2025
+
+- **Authentication and Backend Integration:**
+  - Resumed development after work-related hiatus (March 2nd - March 13th).
+  - Migrated from Vite to Next.js framework to support server-side functionality:
+    - Created API route structure for authentication and data persistence
+    - Configured Next.js build settings for optimal deployment
+    - Updated project configuration to support new framework requirements
+  - Implemented GitHub OAuth authentication system:
+    - Added secure login/logout functionality with JWT token handling
+    - Created authentication middleware for protected routes
+    - Added persistent sessions using HTTP-only cookies
+  - Set up MongoDB integration:
+    - Created MongoDB Atlas cluster for data storage
+    - Designed user schema with personal best scores and preferences
+    - Implemented database connection handling with proper error management
+  - Enhanced user experience with authentication features:
+    - Added profile display with GitHub avatar and username
+    - Implemented persistent color preference storage
+    - Created secure APIs for updating personal best scores
+    - Added conditional UI elements based on authentication state
+
+![VarunPaperIO - 14-03-2025](media/VarunPaperIO%20-%2014-03-2025.gif)
+
+---
+
 _More updates will be logged as development continues._
