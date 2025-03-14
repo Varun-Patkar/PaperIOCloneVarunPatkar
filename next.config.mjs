@@ -6,7 +6,7 @@ const nextConfig = {
 	eslint: {
 		ignoreDuringBuilds: true,
 	},
-	distDir: "dist",
+	// Remove the distDir line
 };
 
 export default nextConfig;
