@@ -1,4 +1,5 @@
-import Reac, { useEffect } from "react";
+"use client";
+import React, { useEffect } from "react";
 import { Game } from "./components/Game";
 import { StartScreen } from "./components/StartScreen";
 import { useGameStore } from "./store";

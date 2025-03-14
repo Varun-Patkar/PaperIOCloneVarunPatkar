@@ -86,7 +86,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     return calculatePolygonArea(closedTerritory);
   },
 
-  // New method to get display percentage (scaled)
   getDisplayPercentage: () => {
     const state = get();
     const totalGameArea = Math.PI * 50 * 50;
@@ -96,12 +95,22 @@ export const useGameStore = create<GameState>((set, get) => ({
     const scaledPercentage = (actualPercentage / MAX_TERRITORY_PERCENTAGE) * 100;
     const displayPercentage = Math.min(100, scaledPercentage);
 
-    // Update personal best if the display percentage is higher
-    if (displayPercentage > state.personalBest) {
-      set({ personalBest: displayPercentage });
-    }
-
     return displayPercentage;
+  },
+
+  // Add a separate method to update personal best
+  updatePersonalBest: () => {
+    const state = get();
+    const currentPercentage = state.getDisplayPercentage();
+
+    if (currentPercentage > state.personalBest) {
+      set({ personalBest: currentPercentage });
+    }
+  },
+  updatePersonalBestScore: (percentage: number) => {
+    const state = get();
+
+    set({ personalBest: percentage });
   },
 
   // Fix the goHome method
