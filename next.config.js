@@ -1,4 +1,5 @@
-module.exports = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
 	typescript: {
 		// !! WARN !!
 		// Dangerously allow production builds to successfully complete even if
@@ -6,4 +7,7 @@ module.exports = {
 		// !! WARN !!
 		ignoreBuildErrors: true,
 	},
+	// Add any other Next.js configurations here
 };
+
+module.exports = nextConfig;
