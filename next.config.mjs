@@ -1,13 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	typescript: {
-		// Ignore TypeScript errors
 		ignoreBuildErrors: true,
 	},
 	eslint: {
-		// Ignore ESLint errors
 		ignoreDuringBuilds: true,
 	},
+	distDir: "dist",
 };
 
 export default nextConfig;
