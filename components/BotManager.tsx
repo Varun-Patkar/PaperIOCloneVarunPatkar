@@ -1,41 +1,8 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useEffect } from "react";
 import { GameEntityWithTrail } from "./GameEntity";
 import * as THREE from "three";
-
-// Define bot state interface
-interface BotState {
-	id: number;
-	name: string;
-	color: string;
-	position: [number, number];
-	direction: [number, number];
-	territory: [number, number][];
-	trail: [number, number][];
-}
-
-// Define bot territory interface
-interface BotTerritory {
-	center: [number, number];
-	color: string;
-	name: string;
-}
-
-// Helper to create a circle territory with explicit center
-const createCircleTerritory = (
-	center: [number, number],
-	radius: number,
-	numPoints: number = 128
-): [number, number][] => {
-	const points: [number, number][] = [];
-	for (let i = 0; i < numPoints; i++) {
-		const angle = (i / numPoints) * Math.PI * 2;
-		points.push([
-			center[0] + Math.cos(angle) * radius, // X coordinate with center offset
-			center[1] + Math.sin(angle) * radius, // Z coordinate with center offset
-		]);
-	}
-	return points;
-};
+import { useGameStore } from "../store"; // Import store
+import { BotState } from "../types"; // Import BotState type
 
 // Bot manager props
 interface BotManagerProps {
@@ -43,211 +10,133 @@ interface BotManagerProps {
 	isGameOver: boolean;
 }
 
+// Helper function to check if a point is in a polygon (can be moved to utils)
+const isPointInPolygon = (
+	point: [number, number],
+	polygon: [number, number][]
+): boolean => {
+	if (!polygon || polygon.length < 3) return false;
+	let inside = false;
+	for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+		const xi = polygon[i][0],
+			yi = polygon[i][1];
+		const xj = polygon[j][0],
+			yj = polygon[j][1];
+		const intersect =
+			yi > point[1] !== yj > point[1] &&
+			point[0] < ((xj - xi) * (point[1] - yi)) / (yj - yi) + xi;
+		if (intersect) inside = !inside;
+	}
+	return inside;
+};
+
 export const BotManager: React.FC<BotManagerProps> = ({
 	gameStarted,
 	isGameOver,
 }) => {
-	// Bot territories defined by center positions with explicit typing
-	const botTerritories: BotTerritory[] = [
-		{
-			center: [20, 20] as [number, number],
-			color: "#3498db",
-			name: "Blue Bot",
-		},
-		{
-			center: [-20, -20] as [number, number],
-			color: "#2ecc71",
-			name: "Green Bot",
-		},
-	];
-
-	// Reset bots whenever game starts
-	useEffect(() => {
-		if (gameStarted && !isGameOver) {
-			// Reset bots to their initial positions when game starts
-			setBots(
-				botTerritories.map((bot, index) => ({
-					id: index + 1,
-					name: bot.name,
-					color: bot.color,
-					position: bot.center, // Make sure position matches center
-					direction: [1, 0],
-					territory: createCircleTerritory(bot.center, 5),
-					trail: [] as [number, number][],
-				}))
-			);
-		}
-	}, [gameStarted, isGameOver]);
-
-	// Initialize bots with starting positions at their territory centers
-	const [bots, setBots] = useState<BotState[]>(
-		botTerritories.map((bot, index) => ({
-			id: index + 1,
-			name: bot.name,
-			color: bot.color,
-			position: bot.center, // Set position to match territory center
-			direction: [1, 0],
-			territory: createCircleTerritory(bot.center, 5),
-			trail: [] as [number, number][],
-		}))
+	// Get bots and actions from the store
+	const bots = useGameStore((state) => state.bots);
+	const updateBotState = useGameStore((state) => state.updateBotState);
+	const addBotToTrail = useGameStore((state) => state.addBotToTrail);
+	const resetBotTrail = useGameStore((state) => state.resetBotTrail);
+	const conquerBotTerritory = useGameStore(
+		(state) => state.conquerBotTerritory
 	);
 
-	// Refs for each bot entity
+	// Refs for each bot entity (optional, depends if direct manipulation is needed)
 	const botRefs = useRef<(THREE.Group | null)[]>([]);
-
-	// Initialize refs array
 	useEffect(() => {
 		botRefs.current = bots.map(() => null);
-	}, []);
+	}, [bots.length]); // Adjust refs array size when bots change
 
-	// Bot update logic
+	// Bot update logic (decision making) - runs locally but updates store
 	useEffect(() => {
 		if (!gameStarted || isGameOver) return;
 
 		const botUpdateInterval = setInterval(() => {
-			setBots((prevBots) => {
-				return prevBots.map((bot) => {
-					// Calculate new position based on direction
-					const newPosition: [number, number] = [
-						bot.position[0] + bot.direction[0] * 0.2, // Slower than player
-						bot.position[1] + bot.direction[1] * 0.2,
-					];
+			bots.forEach((bot) => {
+				// Simple AI: Change direction randomly sometimes or when near edge
+				let newDirection = [...bot.direction] as [number, number];
+				const changeDirection = Math.random() < 0.02; // 2% chance each interval
 
-					// Check if we're at the edge of the map (radius 50)
-					const distance = Math.sqrt(newPosition[0] ** 2 + newPosition[1] ** 2);
-					if (distance > 48) {
-						// Change to perpendicular direction (turn right)
-						const newDir: [number, number] = [
-							bot.direction[1],
-							-bot.direction[0],
-						];
+				// Check map boundary (adjust radius slightly)
+				const nextPotentialX = bot.position[0] + bot.direction[0] * 0.5; // Look ahead slightly
+				const nextPotentialZ = bot.position[1] + bot.direction[1] * 0.5;
+				const distance = Math.sqrt(nextPotentialX ** 2 + nextPotentialZ ** 2);
 
-						return {
-							...bot,
-							direction: newDir,
-						};
+				if (distance > 48 || changeDirection) {
+					// Turn randomly (e.g., 90 degrees left or right)
+					const turnRight = Math.random() > 0.5;
+					if (turnRight) {
+						newDirection = [bot.direction[1], -bot.direction[0]];
+					} else {
+						newDirection = [-bot.direction[1], bot.direction[0]];
 					}
+				}
 
-					// Update position
-					return {
-						...bot,
-						position: newPosition,
-					};
-				});
+				// Update direction in the store if it changed
+				if (
+					newDirection[0] !== bot.direction[0] ||
+					newDirection[1] !== bot.direction[1]
+				) {
+					updateBotState(bot.id, { direction: newDirection });
+				}
+
+				// Note: Actual position update is handled by GameEntity via onPositionUpdate prop
+				// which calls the updateBotState action below.
 			});
-		}, 100); // Update every 100ms
+		}, 200); // Update AI decision logic less frequently than movement
 
 		return () => clearInterval(botUpdateInterval);
-	}, [gameStarted, isGameOver]);
+	}, [gameStarted, isGameOver, bots, updateBotState]); // Depend on bots array
 
-	// Helper function to check if a point is in the bot's territory
-	const isPointInTerritory = (
+	// Helper function to check if a point is in the bot's territory (uses store data)
+	const isPointInBotTerritory = (
 		botId: number,
 		point: [number, number]
 	): boolean => {
 		const bot = bots.find((b) => b.id === botId);
-		if (!bot || bot.territory.length < 3) return false;
-
-		let inside = false;
-		for (
-			let i = 0, j = bot.territory.length - 1;
-			i < bot.territory.length;
-			j = i++
-		) {
-			const xi = bot.territory[i][0],
-				yi = bot.territory[i][1];
-			const xj = bot.territory[j][0],
-				yj = bot.territory[j][1];
-
-			const intersect =
-				yi > point[1] !== yj > point[1] &&
-				point[0] < ((xj - xi) * (point[1] - yi)) / (yj - yi) + xi;
-
-			if (intersect) inside = !inside;
-		}
-		return inside;
+		return bot ? isPointInPolygon(point, bot.territory) : false;
 	};
 
-	// Update position function for bots
-	const updateBotPosition = (botId: number, newPosition: [number, number]) => {
-		setBots((prevBots) =>
-			prevBots.map((bot) =>
-				bot.id === botId ? { ...bot, position: newPosition } : bot
-			)
-		);
+	// Update position function for bots (updates store)
+	const handlePositionUpdate = (
+		botId: number,
+		newPosition: [number, number]
+	) => {
+		updateBotState(botId, { position: newPosition });
 	};
 
-	// Update direction function for bots
-	const updateBotDirection = (
+	// Update direction function for bots (updates store)
+	const handleDirectionUpdate = (
 		botId: number,
 		newDirection: [number, number]
 	) => {
-		setBots((prevBots) =>
-			prevBots.map((bot) =>
-				bot.id === botId ? { ...bot, direction: newDirection } : bot
-			)
-		);
+		updateBotState(botId, { direction: newDirection });
 	};
 
-	// Add to trail function for bots
-	const addToTrail = (botId: number, position: [number, number]) => {
-		setBots((prevBots) =>
-			prevBots.map((bot) =>
-				bot.id === botId ? { ...bot, trail: [...bot.trail, position] } : bot
-			)
-		);
+	// Add to trail function for bots (updates store)
+	const handleTrailUpdate = (botId: number, position: [number, number]) => {
+		addBotToTrail(botId, position);
 	};
 
-	// Reset trail function for bots
-	const resetTrail = (botId: number) => {
-		setBots((prevBots) =>
-			prevBots.map((bot) => {
-				if (bot.id !== botId) return bot;
-				return {
-					...bot,
-					trail: bot.trail.length > 0 ? [bot.trail[bot.trail.length - 1]] : [],
-				};
-			})
-		);
+	// Reset trail function for bots (updates store)
+	const handleResetTrail = (botId: number) => {
+		resetBotTrail(botId);
 	};
 
-	// "Conquer territory" function - a simplified version for bots
-	const conquerTerritory = (botId: number) => {
-		// For now, just reset the trail when a bot would conquer territory
-		resetTrail(botId);
+	// "Conquer territory" function for bots (updates store)
+	const handleConquerTerritory = (botId: number) => {
+		conquerBotTerritory(botId);
 	};
 
-	// Add a hidden div with bot data for minimap to pick up
-	useEffect(() => {
-		// Create hidden elements with bot data for the minimap
-		const cleanup = () => {
-			// Remove any existing bot data elements
-			document.querySelectorAll("[data-bot-id]").forEach((el) => el.remove());
-		};
+	// Handle self-intersection for bots (updates store)
+	const handleSelfIntersection = (botId: number) => {
+		// Simple handling: just reset the trail
+		resetBotTrail(botId);
+	};
 
-		// Only create elements if game is active
-		if (gameStarted && !isGameOver) {
-			cleanup();
-			// Create a hidden element for each bot with its data
-			bots.forEach((bot) => {
-				const el = document.createElement("div");
-				el.style.display = "none";
-				el.setAttribute("data-bot-id", bot.id.toString());
-				el.setAttribute(
-					"data-bot-data",
-					JSON.stringify({
-						position: bot.position,
-						color: bot.color,
-						territory: bot.territory,
-						trail: bot.trail,
-					})
-				);
-				document.body.appendChild(el);
-			});
-		}
-
-		return cleanup;
-	}, [bots, gameStarted, isGameOver]);
+	// REMOVED: Hidden div logic for minimap
 
 	return (
 		<>
@@ -264,14 +153,15 @@ export const BotManager: React.FC<BotManagerProps> = ({
 					territory={bot.territory}
 					trail={bot.trail}
 					active={gameStarted && !isGameOver}
-					onPositionUpdate={(pos) => updateBotPosition(bot.id, pos)}
-					onDirectionUpdate={(dir) => updateBotDirection(bot.id, dir)}
-					onTrailUpdate={(pos) => addToTrail(bot.id, pos)}
-					onConquerTerritory={() => conquerTerritory(bot.id)}
-					onResetTrail={() => resetTrail(bot.id)}
-					insideTerritoryCheck={(pos) => isPointInTerritory(bot.id, pos)}
-					moveSpeed={5.0} // Slightly slower than player
-					onSelfIntersection={() => resetTrail(bot.id)} // Simple handling for now
+					// Pass store actions bound to the specific bot's ID
+					onPositionUpdate={(pos) => handlePositionUpdate(bot.id, pos)}
+					onDirectionUpdate={(dir) => handleDirectionUpdate(bot.id, dir)}
+					onTrailUpdate={(pos) => handleTrailUpdate(bot.id, pos)}
+					onConquerTerritory={() => handleConquerTerritory(bot.id)}
+					onResetTrail={() => handleResetTrail(bot.id)}
+					insideTerritoryCheck={(pos) => isPointInBotTerritory(bot.id, pos)}
+					onSelfIntersection={() => handleSelfIntersection(bot.id)}
+					moveSpeed={6.0} // Bots slightly slower
 				/>
 			))}
 		</>

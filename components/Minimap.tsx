@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React from "react"; // Removed useEffect, useState
 import { useGameStore } from "../store";
+import { LeaderboardEntry } from "../types"; // Use LeaderboardEntry or define a simpler type if needed
 
-// Add a new type for entities to display on minimap
-interface MinimapEntity {
+// Interface for entities displayed on the minimap
+interface MinimapDisplayEntity {
 	position: [number, number];
 	color: string;
 	territory: [number, number][];
@@ -10,36 +11,36 @@ interface MinimapEntity {
 }
 
 export function Minimap() {
-	const { player, gameStarted } = useGameStore();
-	// State to store the player and bot entities for the minimap
-	const [entities, setEntities] = useState<MinimapEntity[]>([]);
+	// Fetch player and bots directly from the store
+	const player = useGameStore((state) => state.player);
+	const bots = useGameStore((state) => state.bots);
+	const gameStarted = useGameStore((state) => state.gameStarted);
 
-	// Effect to fetch bot information when game starts
-	useEffect(() => {
-		// Always include the player
-		const updatedEntities: MinimapEntity[] = [player];
-
-		// Try to get bot data from the DOM
-		if (gameStarted) {
-			// Look for bot data elements created by BotManager
-			const botElements = document.querySelectorAll("[data-bot-data]");
-			botElements.forEach((el) => {
-				try {
-					const botData = JSON.parse(el.getAttribute("data-bot-data") || "{}");
-					if (botData.position && botData.color) {
-						updatedEntities.push(botData as MinimapEntity);
-					}
-				} catch (e) {
-					console.error("Error parsing bot data", e);
-				}
+	// Combine player and bots into a single list for rendering
+	const entities: MinimapDisplayEntity[] = [];
+	if (gameStarted) {
+		// Add player
+		entities.push({
+			position: player.position,
+			color: player.color,
+			territory: player.territory,
+			trail: player.trail,
+		});
+		// Add bots
+		bots.forEach((bot) => {
+			entities.push({
+				position: bot.position,
+				color: bot.color,
+				territory: bot.territory,
+				trail: bot.trail,
 			});
-		}
-
-		setEntities(updatedEntities);
-	}, [player, gameStarted, player.position, player.trail, player.territory]);
+		});
+	}
 
 	return (
-		<div className="absolute bottom-4 left-4 bg-white/80 rounded-lg p-2 shadow-lg">
+		<div className="absolute bottom-4 left-4 bg-white/80 rounded-lg p-2 shadow-lg z-10">
+			{" "}
+			{/* Added z-index */}
 			<div className="relative w-48 h-48 border-2 border-gray-400 rounded-full overflow-hidden">
 				{/* Map background */}
 				<div className="absolute inset-0 bg-gray-100 rounded-full" />

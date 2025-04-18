@@ -98,6 +98,9 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 		const currentAngle = useRef(Math.atan2(direction[0], direction[1]));
 		const wasInsideTerritory = useRef(true);
 		const prevActive = useRef(active);
+		const internalPosition = useRef(
+			new THREE.Vector3(position[0], 0, position[1])
+		); // Internal state for position
 
 		// Update ref when direction prop changes
 		useEffect(() => {
@@ -105,43 +108,45 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 			targetAngle.current = Math.atan2(direction[0], direction[1]);
 		}, [direction]);
 
-		// Sync group position with props on load
+		// Sync internal position state with props initially and on prop change
 		useEffect(() => {
+			internalPosition.current.set(position[0], 0, position[1]);
 			if (groupRef.current) {
-				groupRef.current.position.set(position[0], 0, position[1]);
-			}
-		}, []);
-
-		// Force position sync when position props change or when game resets
-		useEffect(() => {
-			if (groupRef.current) {
-				groupRef.current.position.set(position[0], 0, position[1]);
+				groupRef.current.position.copy(internalPosition.current);
 			}
 		}, [position]);
 
 		// Handle active state change (game start/reset)
 		useEffect(() => {
-			// If the entity was inactive and is now active, reset position AND direction
-			if (!prevActive.current && active && groupRef.current) {
-				// Reset position
-				groupRef.current.position.set(position[0], 0, position[1]);
+			if (groupRef.current) {
+				// When becoming active (e.g., game start/reset)
+				if (!prevActive.current && active) {
+					// Explicitly set position from props
+					internalPosition.current.set(position[0], 0, position[1]);
+					groupRef.current.position.copy(internalPosition.current);
 
-				// Reset direction-related state
-				currentDirection.current.set(direction[0], direction[1]);
-				targetAngle.current = Math.atan2(direction[0], direction[1]);
-				currentAngle.current = Math.atan2(direction[0], direction[1]);
+					// Reset direction-related state
+					currentDirection.current.set(direction[0], direction[1]);
+					targetAngle.current = Math.atan2(direction[0], direction[1]);
+					currentAngle.current = targetAngle.current; // Ensure current angle matches target immediately
+					if (boxRef.current) {
+						boxRef.current.rotation.y = currentAngle.current; // Sync visual rotation
+					}
 
-				// Reset trail timing
-				lastTrailUpdate.current = 0;
-
-				// Reset territory check
-				wasInsideTerritory.current = true;
+					// Reset trail timing and territory state
+					lastTrailUpdate.current = 0;
+					wasInsideTerritory.current = true; // Assume starting inside territory
+				}
+				// When becoming inactive (e.g., game over)
+				else if (prevActive.current && !active) {
+					// Optionally handle deactivation logic here if needed
+				}
 			}
 			prevActive.current = active;
-		}, [active, position, direction]);
+		}, [active, position, direction]); // Rerun if these key props change alongside active state
 
 		useFrame((_, delta) => {
-			if (!active) return;
+			if (!active || !groupRef.current) return;
 
 			// Trail update logic
 			lastTrailUpdate.current += delta;
@@ -162,117 +167,145 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 				}
 			}
 
-			// Movement code
-			if (groupRef.current) {
-				const targetDirection = new THREE.Vector2(direction[0], direction[1]);
-				const hasUserInput = targetDirection.lengthSq() > 0.01;
+			// --- Movement Logic ---
+			const targetDirectionInput = new THREE.Vector2(
+				direction[0],
+				direction[1]
+			);
+			const hasUserInput = targetDirectionInput.lengthSq() > 0.01;
 
+			// Determine target angle based *only* on user input if present
+			if (hasUserInput) {
+				targetAngle.current = Math.atan2(
+					targetDirectionInput.x,
+					targetDirectionInput.y
+				);
+			}
+			// If no user input, targetAngle remains the last intended angle (allowing smooth continuation)
+
+			// Smooth rotation towards target angle
+			const angleDiff = getAngleDifference(
+				currentAngle.current,
+				targetAngle.current
+			);
+			const maxRotationPerFrame = (Math.PI / 4) * (delta / ROTATION_TIME);
+			const rotation =
+				Math.min(Math.abs(angleDiff), maxRotationPerFrame) *
+				Math.sign(angleDiff);
+			currentAngle.current += rotation;
+
+			// Update current moving direction based on smoothed angle
+			currentDirection.current.set(
+				Math.sin(currentAngle.current),
+				Math.cos(currentAngle.current)
+			);
+
+			// Calculate movement speed adjusted by delta time
+			const frameSpeed = moveSpeed * delta;
+
+			// Calculate potential new position based on internal state and current direction
+			let potentialNewX =
+				internalPosition.current.x + currentDirection.current.x * frameSpeed;
+			let potentialNewZ =
+				internalPosition.current.z + currentDirection.current.y * frameSpeed;
+
+			// Check if potential position is at or beyond the boundary
+			const distanceFromCenter = Math.sqrt(
+				potentialNewX ** 2 + potentialNewZ ** 2
+			);
+			const atBoundary = distanceFromCenter >= EFFECTIVE_RADIUS; // Use >= for consistency
+
+			if (atBoundary) {
+				// --- Boundary Handling ---
+				// Clamp position exactly to the boundary first
+				const radialDir = new THREE.Vector2(
+					potentialNewX,
+					potentialNewZ
+				).normalize();
+				potentialNewX = radialDir.x * EFFECTIVE_RADIUS;
+				potentialNewZ = radialDir.y * EFFECTIVE_RADIUS;
+
+				// Calculate the tangent direction based on the *current* position on the boundary
+				const tangentCW = new THREE.Vector2(-radialDir.y, radialDir.x); // Clockwise tangent
+				const tangentCCW = new THREE.Vector2(radialDir.y, -radialDir.x); // Counter-clockwise tangent
+
+				// Determine which tangent is closer to the entity's *current* moving direction
+				const moveDir = currentDirection.current.normalize(); // Use the smoothed direction
+				const dotCW = moveDir.dot(tangentCW);
+				const dotCCW = moveDir.dot(tangentCCW);
+				const tangentToUse = dotCW > dotCCW ? tangentCW : tangentCCW;
+
+				// Check if user input is trying to push *into* the boundary
+				let forceTangent = false;
 				if (hasUserInput) {
-					targetAngle.current = Math.atan2(
-						targetDirection.x,
-						targetDirection.y
-					);
-				}
-
-				const angleDiff = getAngleDifference(
-					currentAngle.current,
-					targetAngle.current
-				);
-
-				const maxRotationPerFrame = (Math.PI / 4) * (delta / ROTATION_TIME);
-				const rotation =
-					Math.min(Math.abs(angleDiff), maxRotationPerFrame) *
-					Math.sign(angleDiff);
-				currentAngle.current += rotation;
-
-				currentDirection.current.set(
-					Math.sin(currentAngle.current),
-					Math.cos(currentAngle.current)
-				);
-
-				// Calculate movement speed adjusted by delta time
-				const frameSpeed = moveSpeed * delta;
-
-				let newPosition = new THREE.Vector3(
-					groupRef.current.position.x + currentDirection.current.x * frameSpeed,
-					groupRef.current.position.y,
-					groupRef.current.position.z + currentDirection.current.y * frameSpeed
-				);
-
-				// Check if we're at the boundary
-				const distanceFromCenter = newPosition.length();
-				const atBoundary = distanceFromCenter > EFFECTIVE_RADIUS;
-
-				// Handle map boundaries
-				if (atBoundary) {
-					const radialDir = new THREE.Vector2(
-						newPosition.x,
-						newPosition.z
-					).normalize();
-
-					// Calculate tangent directions
-					const tangentCW = new THREE.Vector2(-radialDir.y, radialDir.x);
-					const tangentCCW = new THREE.Vector2(radialDir.y, -radialDir.x);
-
-					const moveDir = new THREE.Vector2(
-						currentDirection.current.x,
-						currentDirection.current.y
-					).normalize();
-
-					// Determine which tangent is closer to current direction
-					const dotCW = moveDir.dot(tangentCW);
-					const dotCCW = moveDir.dot(tangentCCW);
-
-					const newTangent = dotCW > dotCCW ? tangentCW : tangentCCW;
-
-					// User input overrides auto-tangent only if we're not directly
-					// approaching the boundary
-					// Calculate if we're moving toward the boundary
-					const movingTowardBoundary = moveDir.dot(radialDir) > 0.7; // threshold to determine "toward"
-
-					if (!hasUserInput || movingTowardBoundary) {
-						// Either no user input or we're headed straight into boundary
-						// Force tangent direction
-						currentDirection.current.copy(newTangent);
-						targetAngle.current = Math.atan2(newTangent.x, newTangent.y);
-
-						// Notify of direction change at boundary
-						if (onDirectionUpdate) {
-							onDirectionUpdate([newTangent.x, newTangent.y]);
-						}
+					const inputPushesInward = targetDirectionInput.dot(radialDir) > 0.1; // Threshold to detect inward push
+					if (inputPushesInward) {
+						forceTangent = true;
 					}
-
-					// Keep player at the boundary radius regardless
-					newPosition = new THREE.Vector3(
-						radialDir.x * EFFECTIVE_RADIUS,
-						newPosition.y,
-						radialDir.y * EFFECTIVE_RADIUS // Fix: use radialDir.y instead of radialDir.z
-					);
+				} else {
+					// No user input, always follow the tangent
+					forceTangent = true;
 				}
 
-				// Update position
-				groupRef.current.position.set(
-					newPosition.x,
-					newPosition.y,
-					newPosition.z
-				);
+				if (forceTangent) {
+					// Override current direction and angles to follow the tangent
+					currentDirection.current.copy(tangentToUse);
+					targetAngle.current = Math.atan2(tangentToUse.x, tangentToUse.y);
+					currentAngle.current = targetAngle.current; // Snap angle to tangent immediately
 
-				// Notify of position update
-				if (onPositionUpdate) {
-					onPositionUpdate([newPosition.x, newPosition.z]);
+					// Notify of direction change (optional, if external logic needs it)
+					if (onDirectionUpdate) {
+						onDirectionUpdate([tangentToUse.x, tangentToUse.y]);
+					}
 				}
+				// If user input is not pushing inward, the normal rotation logic towards targetAngle
+				// (which was set by user input) will handle the direction.
+				// The position clamping ensures they slide along the boundary.
 
-				// Update box rotation
-				if (boxRef.current) {
-					boxRef.current.rotation.y = currentAngle.current;
+				// Recalculate movement for this frame based on potentially adjusted direction
+				potentialNewX =
+					internalPosition.current.x + currentDirection.current.x * frameSpeed;
+				potentialNewZ =
+					internalPosition.current.z + currentDirection.current.y * frameSpeed;
+				// Re-clamp position after recalculating movement with potentially forced tangent direction
+				const finalDist = Math.sqrt(potentialNewX ** 2 + potentialNewZ ** 2);
+				if (finalDist > EFFECTIVE_RADIUS) {
+					potentialNewX = (potentialNewX / finalDist) * EFFECTIVE_RADIUS;
+					potentialNewZ = (potentialNewZ / finalDist) * EFFECTIVE_RADIUS;
 				}
+			} // --- End Boundary Handling ---
+
+			// Update internal position state
+			internalPosition.current.set(potentialNewX, 0, potentialNewZ);
+
+			// Update visual position
+			groupRef.current.position.copy(internalPosition.current);
+
+			// Notify of position update
+			if (onPositionUpdate) {
+				onPositionUpdate([
+					internalPosition.current.x,
+					internalPosition.current.z,
+				]);
+			}
+
+			// Update box rotation based on the smoothed currentAngle
+			if (boxRef.current) {
+				boxRef.current.rotation.y = currentAngle.current;
 			}
 		});
 
 		useImperativeHandle(ref, () => groupRef.current as THREE.Group);
 
 		return (
-			<group ref={groupRef} castShadow receiveShadow>
+			<group
+				ref={groupRef}
+				position={[position[0], 0, position[1]]}
+				castShadow
+				receiveShadow
+			>
+				{" "}
+				{/* Initialize position */}
 				<Billboard
 					position={[0, 2, 0]}
 					follow={true}
@@ -306,130 +339,49 @@ export const GameEntityWithTrail = forwardRef<
 	(
 		{
 			territory,
-			trail,
+			trail, // Get trail from props to check length
 			onConquerTerritory,
 			onResetTrail,
 			onSelfIntersection,
-			...entityProps
+			...entityProps // Includes onTrailUpdate from GameEntityProps
 		},
 		ref
 	) => {
-		// Add wasInsideTerritory ref to maintain persistent state
 		const wasInsideTerritory = useRef(true);
 
 		// Create territory shape geometry
 		const territoryGeometry = useMemo(() => {
-			if (territory.length < 3) return null;
+			if (!territory || territory.length < 3) return null;
 
-			// Create shape from territory points
-			const shape = new THREE.Shape();
-			shape.moveTo(territory[0][0], -territory[0][1]);
+			try {
+				// Revert to using negated Z for shape's Y coordinate
+				const shape = new THREE.Shape();
+				shape.moveTo(territory[0][0], -territory[0][1]); // Use -Z
 
-			// Add the remaining points
-			for (let i = 1; i < territory.length; i++) {
-				shape.lineTo(territory[i][0], -territory[i][1]);
-			}
-
-			shape.closePath();
-			return new THREE.ShapeGeometry(shape);
-		}, [territory]);
-
-		// Create trail geometry using TubeGeometry for smooth trail
-		const trailGeometry = useMemo(() => {
-			if (trail.length < 2) return null;
-
-			// Convert trail points to Vector3 with consistent small Y value
-			const trailPoints = trail.map(([x, z]) => new THREE.Vector3(x, 0.02, z));
-
-			// Create a smooth curve through all points
-			const curve = new THREE.CatmullRomCurve3(trailPoints);
-			curve.curveType = "centripetal"; // Better for sharp corners
-
-			// Create a custom flat elliptical tube cross-section
-			const tubeRadius = 0.5;
-			const tubeHeight = 0.08;
-			const tubularSegments = Math.max(64, trailPoints.length * 4);
-			const radialSegments = 8;
-
-			// Use layers to ensure flat orientation
-			const frames = curve.computeFrenetFrames(tubularSegments, false);
-
-			// Override normal vectors to always point up
-			for (let i = 0; i < frames.normals.length; i++) {
-				frames.normals[i].set(0, 1, 0);
-				frames.binormals[i].crossVectors(frames.tangents[i], frames.normals[i]);
-			}
-
-			// Create custom buffer geometry
-			const geometry = new THREE.BufferGeometry();
-			const positions = [];
-			const indices = [];
-			const uvs = [];
-
-			// Generate vertices based on the curve
-			for (let i = 0; i <= tubularSegments; i++) {
-				const t = i / tubularSegments;
-				const point = curve.getPointAt(t);
-				const tangent = curve.getTangentAt(t).normalize();
-
-				// Force tangents to stay in XZ plane
-				tangent.y = 0;
-				tangent.normalize();
-
-				// Use custom frame
-				const normal = frames.normals[Math.min(i, frames.normals.length - 1)];
-				const binormal = new THREE.Vector3()
-					.crossVectors(normal, tangent)
-					.normalize();
-
-				// Generate circle vertices
-				for (let j = 0; j <= radialSegments; j++) {
-					const angle = (j / radialSegments) * Math.PI * 2;
-					const sin = Math.sin(angle);
-					const cos = Math.cos(angle);
-
-					// Make elliptical (wider than taller)
-					const x = cos * tubeRadius;
-					const y = sin * tubeHeight;
-
-					// Position in 3D space using our custom frame
-					const vertex = new THREE.Vector3();
-					vertex.x = point.x + x * binormal.x;
-					vertex.y = Math.max(0.01, point.y + y * normal.y);
-					vertex.z = point.z + x * binormal.z;
-
-					positions.push(vertex.x, vertex.y, vertex.z);
-
-					// Add UVs
-					uvs.push(t, j / radialSegments);
+				for (let i = 1; i < territory.length; i++) {
+					if (
+						territory[i] &&
+						territory[i].length === 2 &&
+						!isNaN(territory[i][0]) &&
+						!isNaN(territory[i][1])
+					) {
+						shape.lineTo(territory[i][0], -territory[i][1]); // Use -Z
+					} else {
+						console.warn(
+							"Invalid point in territory data:",
+							territory[i],
+							"at index",
+							i
+						);
+					}
 				}
+				shape.closePath();
+				return new THREE.ShapeGeometry(shape);
+			} catch (error) {
+				console.error("Error creating territory geometry:", error, territory);
+				return null;
 			}
-
-			// Create faces (triangles)
-			const vertsPerRow = radialSegments + 1;
-			for (let i = 0; i < tubularSegments; i++) {
-				for (let j = 0; j < radialSegments; j++) {
-					const a = i * vertsPerRow + j;
-					const b = (i + 1) * vertsPerRow + j;
-					const c = (i + 1) * vertsPerRow + (j + 1);
-					const d = i * vertsPerRow + (j + 1);
-
-					// Two triangles per face
-					indices.push(a, b, d);
-					indices.push(b, c, d);
-				}
-			}
-
-			geometry.setAttribute(
-				"position",
-				new THREE.Float32BufferAttribute(positions, 3)
-			);
-			geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-			geometry.setIndex(indices);
-			geometry.computeVertexNormals();
-
-			return geometry;
-		}, [trail]);
+		}, [territory]); // Ensure geometry updates when territory changes
 
 		// Custom trail update handler
 		const handleTrailUpdate = (position: [number, number]) => {
@@ -438,80 +390,194 @@ export const GameEntityWithTrail = forwardRef<
 
 			if (isInside) {
 				// Player is inside territory
-				if (!wasInsideTerritory.current && trail.length > 1) {
-					// Just entered territory with trail - conquer!
-					onConquerTerritory?.();
-					onResetTrail?.();
+				if (!wasInsideTerritory.current) {
+					// Just re-entered territory.
+					// Add the current point to finalize the trail loop.
+					entityProps.onTrailUpdate?.(position); // Add final point
+
+					// Check if trail is long enough to conquer (entry + re-entry + at least one outside point)
+					// Need to check the length *after* adding the final point, so trail.length + 1 >= 3
+					if (trail.length + 1 >= 3) {
+						onConquerTerritory?.(); // Conquer using the completed trail
+					} else {
+						// Trail too short (e.g., immediately re-entered), just reset it.
+						onResetTrail?.();
+					}
+					// Note: conquerPlayerTerritory now handles clearing the trail.
 				}
-				// No need to add to trail while inside territory
+				// If already inside, do nothing with the trail.
 				wasInsideTerritory.current = true;
 			} else {
 				// Player is outside territory
 				if (wasInsideTerritory.current) {
-					// Just exited territory - start a new trail
-					entityProps.onTrailUpdate?.(position);
-					onResetTrail?.();
+					// Just exited territory. Reset trail and start a new one.
+					onResetTrail?.(); // Clear previous trail remnants (store action clears array)
+					entityProps.onTrailUpdate?.(position); // Add the first point of the new trail (store action adds to empty array)
 				} else {
-					// Already outside territory
-					// Check for self-intersection before adding point
+					// Still outside territory. Check self-intersection and add to trail.
+					// Check intersection only if trail is long enough to form a segment to check against
 					if (trail.length >= 3) {
 						const prevPoint = trail[trail.length - 1];
-
-						// Check newest segment against all previous segments (except adjacent)
+						// Check newest segment against all previous non-adjacent segments
 						for (let i = 0; i < trail.length - 2; i++) {
 							if (
 								doSegmentsIntersect(prevPoint, position, trail[i], trail[i + 1])
 							) {
-								// Self-intersection detected - GAME OVER
 								onSelfIntersection?.();
-								return; // Stop processing to prevent further trail updates
+								return; // Stop processing to prevent adding the intersecting point
 							}
 						}
 					}
-
-					// Continue trail
+					// Add current point to the ongoing trail.
 					entityProps.onTrailUpdate?.(position);
 				}
 				wasInsideTerritory.current = false;
 			}
 		};
 
+		// Restore complex trail geometry using TubeGeometry logic
+		const trailGeometry = useMemo(() => {
+			if (!trail || trail.length < 2) return null;
+
+			try {
+				// Convert trail points to Vector3 with consistent small Y value
+				const trailPoints = trail.map(
+					([x, z]) => new THREE.Vector3(x, 0.02, z)
+				);
+
+				// Create a smooth curve through all points
+				const curve = new THREE.CatmullRomCurve3(trailPoints);
+				curve.curveType = "centripetal"; // Better for sharp corners
+
+				// Create a custom flat elliptical tube cross-section
+				const tubeRadius = 0.5; // Width of the trail
+				const tubeHeight = 0.08; // Thickness of the trail
+				const tubularSegments = Math.max(64, trailPoints.length * 4); // More segments for smoother curve
+				const radialSegments = 8; // Segments around the tube
+
+				// Use layers to ensure flat orientation
+				const frames = curve.computeFrenetFrames(tubularSegments, false);
+
+				// Override normal vectors to always point up
+				for (let i = 0; i < frames.normals.length; i++) {
+					frames.normals[i].set(0, 1, 0);
+					frames.binormals[i].crossVectors(
+						frames.tangents[i],
+						frames.normals[i]
+					);
+				}
+
+				// Create custom buffer geometry
+				const geometry = new THREE.BufferGeometry();
+				const positions = [];
+				const indices = [];
+				const uvs = [];
+
+				// Generate vertices based on the curve
+				for (let i = 0; i <= tubularSegments; i++) {
+					const t = i / tubularSegments;
+					const point = curve.getPointAt(t);
+					const tangent = curve.getTangentAt(t).normalize();
+
+					// Force tangents to stay in XZ plane
+					tangent.y = 0;
+					tangent.normalize();
+
+					// Use custom frame (ensure index is within bounds)
+					const frameIndex = Math.min(i, frames.normals.length - 1);
+					const normal = frames.normals[frameIndex];
+					const binormal = frames.binormals[frameIndex];
+
+					// Generate circle vertices
+					for (let j = 0; j <= radialSegments; j++) {
+						const angle = (j / radialSegments) * Math.PI * 2;
+						const sin = Math.sin(angle);
+						const cos = Math.cos(angle);
+
+						// Make elliptical (wider than taller)
+						const x = cos * tubeRadius;
+						const y = sin * tubeHeight;
+
+						// Position in 3D space using our custom frame
+						const vertex = new THREE.Vector3();
+						vertex.x = point.x + x * binormal.x;
+						vertex.y = Math.max(0.01, point.y + y * normal.y); // Ensure slightly above ground
+						vertex.z = point.z + x * binormal.z;
+
+						positions.push(vertex.x, vertex.y, vertex.z);
+
+						// Add UVs
+						uvs.push(t, j / radialSegments);
+					}
+				}
+
+				// Create faces (triangles)
+				const vertsPerRow = radialSegments + 1;
+				for (let i = 0; i < tubularSegments; i++) {
+					for (let j = 0; j < radialSegments; j++) {
+						const a = i * vertsPerRow + j;
+						const b = (i + 1) * vertsPerRow + j;
+						const c = (i + 1) * vertsPerRow + (j + 1);
+						const d = i * vertsPerRow + (j + 1);
+
+						// Two triangles per face
+						indices.push(a, b, d);
+						indices.push(b, c, d);
+					}
+				}
+
+				geometry.setAttribute(
+					"position",
+					new THREE.Float32BufferAttribute(positions, 3)
+				);
+				geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+				geometry.setIndex(indices);
+				geometry.computeVertexNormals(); // Compute normals for lighting
+
+				return geometry;
+			} catch (error) {
+				console.error("Error creating trail geometry:", error, trail);
+				return null;
+			}
+		}, [trail]); // Recompute when trail changes
+
 		return (
 			<>
 				<GameEntity
 					{...entityProps}
 					ref={ref}
-					onTrailUpdate={handleTrailUpdate}
+					onTrailUpdate={handleTrailUpdate} // Pass the refined handler
 					insideTerritoryCheck={(pos) => isPointInPolygon(pos, territory)}
 				/>
-
 				{/* Territory visualization */}
 				{territoryGeometry && (
 					<mesh
 						geometry={territoryGeometry}
-						position={[0, 0.005, 0]} // Slightly above ground to avoid z-fighting
+						position={[0, 0.005, 0]} // Slightly above ground
 						rotation={[-Math.PI / 2, 0, 0]} // Rotate to lie flat on XZ plane
+						receiveShadow // Allow territory to receive shadows
 					>
 						<meshStandardMaterial
 							color={entityProps.color}
 							transparent={true}
-							opacity={0.6}
-							side={THREE.DoubleSide}
-							roughness={0.7}
-							metalness={0.2}
+							opacity={0.6} // Keep some transparency
+							side={THREE.DoubleSide} // Render both sides
+							roughness={0.8} // Make it less shiny
+							metalness={0.1}
+							// depthWrite={false} // Might help with z-fighting but can cause render order issues
 						/>
 					</mesh>
 				)}
 
-				{/* Trail visualization */}
+				{/* Restore Trail visualization using Mesh */}
 				{trailGeometry && (
-					<mesh geometry={trailGeometry}>
+					<mesh geometry={trailGeometry} castShadow receiveShadow>
 						<meshStandardMaterial
 							color={entityProps.color}
-							side={THREE.DoubleSide}
-							roughness={0.3}
-							metalness={0.1}
-							envMapIntensity={0.8}
+							side={THREE.DoubleSide} // Render both sides
+							roughness={0.6} // Adjust appearance
+							metalness={0.2}
+							// envMapIntensity={0.5} // Optional: add environment map influence
 						/>
 					</mesh>
 				)}
