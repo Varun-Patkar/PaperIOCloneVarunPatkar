@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { GameEntityWithTrail } from "./GameEntity";
 import { GameOverScreen } from "./GameOverScreen";
 import { BotManager } from "./BotManager";
-import { LeaderboardEntry } from "../types"; // Import LeaderboardEntry
+import { LeaderboardEntry, OtherEntityTrail } from "../types"; // Import types
 
 // Define proper types for the joystick props
 interface VirtualJoystickProps {
@@ -99,33 +99,15 @@ const VirtualJoystick = ({ onDirectionChange }: VirtualJoystickProps) => {
 	);
 };
 
-// Leaderboard Component
+// Leaderboard Component - Updated
 const Leaderboard = () => {
-	const leaderboardData = useGameStore((state) => state.getLeaderboardData());
+	const leaderboardData = useGameStore((state) => state.getLeaderboardData()); // Already filters dead bots
 	const personalBest = useGameStore((state) => state.personalBest);
 	const formattedPersonalBest = personalBest.toFixed(1);
 	const MAX_LEADERBOARD_ENTRIES = 5; // Show top 5 including player
 
-	// Get top entries, ensuring player is always shown if outside top N
-	const getDisplayEntries = () => {
-		const topN = leaderboardData.slice(0, MAX_LEADERBOARD_ENTRIES);
-		const playerEntry = leaderboardData.find((e) => e.isPlayer);
-		const isPlayerInTopN = topN.some((e) => e.isPlayer);
-
-		if (playerEntry && !isPlayerInTopN) {
-			// If player exists but is not in top N, replace the last entry with the player
-			if (topN.length === MAX_LEADERBOARD_ENTRIES) {
-				return [...topN.slice(0, -1), playerEntry];
-			} else {
-				// If less than N entries, just add player
-				return [...topN, playerEntry];
-			}
-		}
-		return topN; // Player is already in top N or doesn't exist
-	};
-
-	const displayEntries = getDisplayEntries();
-	const isFull = displayEntries.length >= MAX_LEADERBOARD_ENTRIES; // Check if leaderboard is full
+	// ... getDisplayEntries logic (unchanged) ...
+	const displayEntries = leaderboardData.slice(0, MAX_LEADERBOARD_ENTRIES); // Simpler now as data is pre-filtered/sorted
 
 	return (
 		// Added overflow-hidden to the main container
@@ -150,33 +132,29 @@ const Leaderboard = () => {
 					<li
 						key={entry.id}
 						// Increase vertical padding: py-1 when full, py-1.5 otherwise
-						className={`flex justify-between items-center ${
-							isFull ? "py-1 px-1" : "py-1.5 px-2" // Adjusted padding
-						} rounded transition-all duration-500 ease-out ${
+						className={`flex justify-between items-center py-1 px-1 rounded transition-all duration-500 ease-out ${
 							entry.isPlayer
 								? "bg-blue-900 bg-opacity-50 border border-blue-700"
 								: "bg-gray-800 bg-opacity-50"
 						}`}
 						// Removed transform style, rely on flex/padding for layout
 					>
-						<div className="flex items-center space-x-1.5 overflow-hidden">
+						{/* Left side: Rank, Color, Name */}
+						<div className="flex items-center space-x-1.5 overflow-hidden flex-1 min-w-0 mr-2">
 							{" "}
-							{/* Added overflow-hidden */}
-							{/* Adjusted text size */}
-							<span
-								className={`font-semibold ${
-									isFull ? "text-xs" : "text-sm"
-								} w-5 text-right`}
-							>
+							{/* Added flex-1, min-w-0, mr-2 */}
+							<span className="font-semibold text-xs w-5 text-right flex-shrink-0">
+								{" "}
+								{/* Added flex-shrink-0 */}
 								{index + 1}.
 							</span>
 							<div
-								className={`w-2.5 h-2.5 rounded-full flex-shrink-0`} // Ensure dot doesn't shrink text
+								className="w-2.5 h-2.5 rounded-full flex-shrink-0" // Ensure dot doesn't shrink text
 								style={{ backgroundColor: entry.color }}
 							></div>
 							<span
-								// Adjusted text size, ensure truncation works
-								className={`truncate ${isFull ? "text-xs" : "text-sm"} ${
+								className={`truncate text-xs ${
+									// Ensure truncation works
 									entry.isPlayer ? "font-bold text-yellow-300" : "text-gray-300"
 								}`}
 								title={entry.name}
@@ -184,14 +162,23 @@ const Leaderboard = () => {
 								{entry.name}
 							</span>
 						</div>
-						{/* Adjusted text size */}
-						<span
-							className={`font-semibold ${
-								isFull ? "text-xs" : "text-sm"
-							} text-green-400 flex-shrink-0 ml-1`}
-						>
-							{entry.percentage.toFixed(1)}%
-						</span>
+						{/* Right side: Kills, Percentage */}
+						<div className="flex items-center space-x-2 flex-shrink-0">
+							{" "}
+							{/* Added flex container and spacing */}
+							{/* Kill Count */}
+							<span className="text-xs text-red-400 font-semibold">
+								{" "}
+								{/* Kill count style */}
+								{entry.killCount}🔪
+							</span>
+							{/* Percentage */}
+							<span className="font-semibold text-xs text-green-400 w-10 text-right">
+								{" "}
+								{/* Fixed width for alignment */}
+								{entry.percentage.toFixed(1)}%
+							</span>
+						</div>
 					</li>
 				))}
 			</ul>
@@ -203,6 +190,7 @@ export function Game() {
 	const {
 		updatePlayerDirection,
 		player,
+		bots, // Get bots state
 		updatePlayerPosition,
 		conquerPlayerTerritory, // Renamed action
 		resetPlayerTrail, // Renamed action
@@ -210,6 +198,7 @@ export function Game() {
 		isGameOver,
 		setGameOver,
 		addPlayerToTrail, // Renamed action
+		killBot, // Action to kill bots
 	} = useGameStore();
 
 	const playerRef = useRef<any>(null);
@@ -218,16 +207,19 @@ export function Game() {
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
+			if (isGameOver) return; // Ignore input if game is over
 			keysPressed.current.add(e.key.toLowerCase());
 			updateDirection();
 		};
 
 		const handleKeyUp = (e: KeyboardEvent) => {
+			if (isGameOver) return; // Ignore input if game is over
 			keysPressed.current.delete(e.key.toLowerCase());
 			updateDirection();
 		};
 
 		const updateDirection = () => {
+			if (isGameOver) return; // Double check
 			let newDirection = new THREE.Vector2(0, 0);
 
 			// Support both WASD and arrow keys
@@ -274,9 +266,10 @@ export function Game() {
 			window.removeEventListener("keydown", handleKeyDown);
 			window.removeEventListener("keyup", handleKeyUp);
 		};
-	}, [updatePlayerDirection]);
+	}, [updatePlayerDirection, isGameOver]); // Add isGameOver dependency
 
 	const handleJoystickDirection = (direction: [number, number]) => {
+		if (isGameOver) return; // Ignore input if game is over
 		if (direction[0] === 0 && direction[1] === 0) {
 			// If joystick is centered, use last direction
 			updatePlayerDirection([lastDirection.current.x, lastDirection.current.y]);
@@ -336,10 +329,24 @@ export function Game() {
 		return null;
 	};
 
-	// Function to handle self-intersection
+	// --- Collision Handlers for Player ---
+
+	// Player hits own trail
 	const handleSelfIntersection = () => {
-		setGameOver(false); // Not a victory
+		// console.log("Player detected self-intersection via handler.");
+		setGameOver(false, "self"); // Player dies by self-collision
 	};
+
+	// Player hits a bot's trail
+	const handleBotTrailCollision = (killedBotId: number) => {
+		// console.log(`Player hit bot ${killedBotId}'s trail via handler.`);
+		killBot(killedBotId, "player"); // Kill the bot, player is the killer
+	};
+
+	// Prepare data for collision checks
+	const aliveBotsData: OtherEntityTrail[] = bots
+		.filter((b) => b.isAlive)
+		.map((b) => ({ id: b.id, trail: b.trail }));
 
 	return (
 		<div className="w-full h-screen relative">
@@ -362,31 +369,43 @@ export function Game() {
 				<GameMap />
 				<GameEntityWithTrail
 					ref={playerRef}
-					name={player.name}
+					// Entity Identification
+					entityId={"player"}
+					isBot={false}
+					// Basic Props
+					name={player.name || "You"} // Use player name or default
 					color={player.color}
 					position={player.position}
 					direction={player.direction}
 					territory={player.territory}
-					trail={player.trail}
+					trail={player.trail} // Pass trail for conquest logic & visualization
 					active={gameStarted && !isGameOver}
+					moveSpeed={8.0}
+					// State Update Callbacks
 					onPositionUpdate={updatePlayerPosition}
 					onDirectionUpdate={updatePlayerDirection}
-					onTrailUpdate={(pos) => addPlayerToTrail(pos)}
+					onTrailUpdate={(pos) => addPlayerToTrail(pos)} // For conquest logic
 					onConquerTerritory={conquerPlayerTerritory}
 					onResetTrail={resetPlayerTrail}
 					insideTerritoryCheck={isPointInTerritory}
-					onSelfIntersection={handleSelfIntersection}
-					moveSpeed={8.0}
+					// Collision Data Props
+					otherBots={aliveBotsData} // Pass alive bots' trails
+					// playerTrail prop is not needed for the player entity
+					// Collision Callback Props
+					onSelfIntersection={handleSelfIntersection} // Player dies
+					onBotTrailCollision={handleBotTrailCollision} // Bot dies
+					// onPlayerTrailCollision is not needed for player
+					// onBotBotTrailCollision is not needed for player
 				/>
 
-				{/* Add the BotManager component */}
+				{/* Render BotManager which handles its own alive bots */}
 				<BotManager gameStarted={gameStarted} isGameOver={isGameOver} />
 			</Canvas>
 			<Minimap />
-
-			{/* Replace TerritoryProgress with Leaderboard */}
-			<Leaderboard />
-			<VirtualJoystick onDirectionChange={handleJoystickDirection} />
+			<Leaderboard /> {/* Updated Leaderboard */}
+			{!isGameOver && (
+				<VirtualJoystick onDirectionChange={handleJoystickDirection} />
+			)}
 			<GameOverScreen />
 		</div>
 	);

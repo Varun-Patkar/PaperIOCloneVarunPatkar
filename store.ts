@@ -184,6 +184,7 @@ const initialPlayerState: PlayerState = {
   direction: [1, 0],
   territory: createCircleTerritory(5, [0, 0]), // Create territory at center
   trail: [],
+  killCount: 0, // Added
 };
 
 // Define the initial bot configurations outside so it can be reused
@@ -240,17 +241,21 @@ export const useGameStore = create<GameState>((set, get) => ({
       color: state.player.color,
       percentage: state.getDisplayPercentage('player'),
       isPlayer: true,
+      killCount: state.player.killCount, // Added
     });
 
-    // Add bots
+    // Add ALIVE bots
     state.bots.forEach(bot => {
-      leaderboard.push({
-        id: bot.id,
-        name: bot.name,
-        color: bot.color,
-        percentage: state.getDisplayPercentage(bot.id),
-        isPlayer: false,
-      });
+      if (bot.isAlive) { // Only include alive bots
+        leaderboard.push({
+          id: bot.id,
+          name: bot.name,
+          color: bot.color,
+          percentage: state.getDisplayPercentage(bot.id),
+          isPlayer: false,
+          killCount: bot.killCount, // Added
+        });
+      }
     });
 
     // Sort: Descending percentage, player first in case of tie
@@ -287,13 +292,32 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ gameStarted: false, isGameOver: false });
     get().resetGame(); // Use get() to access the method properly
   },
-  // Game over function
-  setGameOver: (isVictory = false) =>
+  // Game over function - accepts killer ID
+  setGameOver: (isVictory = false, killerId: number | 'self' | undefined = undefined) =>
     set(state => {
       // Update personal best based on player's final percentage
       const playerPercentage = state.getDisplayPercentage('player');
       const newPersonalBest = Math.max(state.personalBest, playerPercentage);
 
+      // If player was killed by a bot, increment that bot's kill count
+      if (!isVictory && typeof killerId === 'number') {
+        const killerBotIndex = state.bots.findIndex(b => b.id === killerId);
+        if (killerBotIndex !== -1) {
+          const bots = [...state.bots];
+          bots[killerBotIndex] = {
+            ...bots[killerBotIndex],
+            killCount: bots[killerBotIndex].killCount + 1,
+          };
+          return {
+            isGameOver: true,
+            isVictory: false, // Ensure victory is false if killed
+            personalBest: newPersonalBest,
+            bots: bots, // Update bots state with incremented kill count
+          };
+        }
+      }
+
+      // Handle self-kill or victory
       return {
         isGameOver: true,
         isVictory,
@@ -320,9 +344,10 @@ export const useGameStore = create<GameState>((set, get) => ({
           direction: [1, 0],
           trail: [],
           position: centerPosition,
-          territory: createCircleTerritory(5, centerPosition)
+          territory: createCircleTerritory(5, centerPosition),
+          killCount: 0, // Reset kill count
         },
-        // Bots are handled by initializeBots above
+        // Bots are handled by initializeBots above (which resets their state including killCount and isAlive)
         isGameOver: false,
         isVictory: false,
         personalBest: currentPersonalBest, // Keep the existing personal best
@@ -476,6 +501,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         territory: territory,
         trail: [],
         territoryArea: calculatePolygonArea(territory),
+        isAlive: true, // Initialize as alive
+        killCount: 0, // Initialize kill count
       };
     });
     set({ bots });
@@ -506,13 +533,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
   },
 
+  // Update resetBotTrail to clear completely
   resetBotTrail: (botId) => {
     set((state) => ({
       bots: state.bots.map(bot => {
         if (bot.id !== botId) return bot;
-        // Keep last point or clear completely
-        const trail = bot.trail.length > 0 ? [bot.trail[bot.trail.length - 1]] : [];
-        return { ...bot, trail };
+        // Clear the trail completely
+        return { ...bot, trail: [] };
       }),
     }));
   },
@@ -526,6 +553,39 @@ export const useGameStore = create<GameState>((set, get) => ({
         return { ...bot, trail: [] };
       }),
     }));
+  },
+
+  // New Action: Kill Bot
+  killBot: (botId, killerId) => {
+    set((state) => {
+      const botIndex = state.bots.findIndex(b => b.id === botId);
+      if (botIndex === -1 || !state.bots[botIndex].isAlive) {
+        return {}; // Bot already dead or not found
+      }
+
+      const killedBot = state.bots[botIndex];
+      colorManager.releaseBotColor(killedBot.color); // Release color
+
+      const updatedBots = [...state.bots];
+      updatedBots[botIndex] = { ...killedBot, isAlive: false, trail: [] }; // Mark as dead, clear trail
+
+      let updatedPlayer = state.player;
+
+      // Increment killer's score
+      if (killerId === 'player') {
+        updatedPlayer = { ...state.player, killCount: state.player.killCount + 1 };
+      } else if (killerId !== 'self') { // Another bot killed this bot
+        const killerBotIndex = updatedBots.findIndex(b => b.id === killerId && b.isAlive);
+        if (killerBotIndex !== -1) {
+          updatedBots[killerBotIndex] = {
+            ...updatedBots[killerBotIndex],
+            killCount: updatedBots[killerBotIndex].killCount + 1,
+          };
+        }
+      }
+
+      return { bots: updatedBots, player: updatedPlayer };
+    });
   },
 
 }));

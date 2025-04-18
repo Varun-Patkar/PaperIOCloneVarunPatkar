@@ -16,7 +16,7 @@ export function Minimap() {
 	const bots = useGameStore((state) => state.bots);
 	const gameStarted = useGameStore((state) => state.gameStarted);
 
-	// Combine player and bots into a single list for rendering
+	// Combine player and ALIVE bots into a single list for rendering
 	const entities: MinimapDisplayEntity[] = [];
 	if (gameStarted) {
 		// Add player
@@ -26,14 +26,17 @@ export function Minimap() {
 			territory: player.territory,
 			trail: player.trail,
 		});
-		// Add bots
+		// Add ALIVE bots
 		bots.forEach((bot) => {
-			entities.push({
-				position: bot.position,
-				color: bot.color,
-				territory: bot.territory,
-				trail: bot.trail,
-			});
+			if (bot.isAlive) {
+				// Only render alive bots
+				entities.push({
+					position: bot.position,
+					color: bot.color,
+					territory: bot.territory,
+					trail: bot.trail,
+				});
+			}
 		});
 	}
 
@@ -45,7 +48,7 @@ export function Minimap() {
 				{/* Map background */}
 				<div className="absolute inset-0 bg-gray-100 rounded-full" />
 
-				{/* Render all entities (player + bots) */}
+				{/* Render all entities (player + alive bots) */}
 				{entities.map((entity, entityIndex) => (
 					<React.Fragment key={entityIndex}>
 						{/* Territory visualization */}

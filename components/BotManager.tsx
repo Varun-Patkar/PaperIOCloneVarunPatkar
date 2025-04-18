@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from "react";
 import { GameEntityWithTrail } from "./GameEntity";
 import * as THREE from "three";
 import { useGameStore } from "../store"; // Import store
-import { BotState } from "../types"; // Import BotState type
+import { BotState, OtherEntityTrail } from "../types"; // Import types
 
 // Bot manager props
 interface BotManagerProps {
@@ -36,18 +36,22 @@ export const BotManager: React.FC<BotManagerProps> = ({
 }) => {
 	// Get bots and actions from the store
 	const bots = useGameStore((state) => state.bots);
+	const player = useGameStore((state) => state.player); // Get player state for trail
 	const updateBotState = useGameStore((state) => state.updateBotState);
 	const addBotToTrail = useGameStore((state) => state.addBotToTrail);
 	const resetBotTrail = useGameStore((state) => state.resetBotTrail);
 	const conquerBotTerritory = useGameStore(
 		(state) => state.conquerBotTerritory
 	);
+	const killBot = useGameStore((state) => state.killBot); // Action to kill a bot
+	const setGameOver = useGameStore((state) => state.setGameOver); // Action for player death
 
 	// Refs for each bot entity (optional, depends if direct manipulation is needed)
 	const botRefs = useRef<(THREE.Group | null)[]>([]);
 	useEffect(() => {
-		botRefs.current = bots.map(() => null);
-	}, [bots.length]); // Adjust refs array size when bots change
+		// Adjust refs array size based on *alive* bots if filtering happens before mapping
+		botRefs.current = bots.filter((b) => b.isAlive).map(() => null);
+	}, [bots]); // Re-evaluate when bots array changes (e.g., a bot dies)
 
 	// Bot update logic (decision making) - runs locally but updates store
 	useEffect(() => {
@@ -95,7 +99,8 @@ export const BotManager: React.FC<BotManagerProps> = ({
 		botId: number,
 		point: [number, number]
 	): boolean => {
-		const bot = bots.find((b) => b.id === botId);
+		// Find bot, ensuring it exists and is alive might be good practice
+		const bot = bots.find((b) => b.id === botId && b.isAlive);
 		return bot ? isPointInPolygon(point, bot.territory) : false;
 	};
 
@@ -130,40 +135,76 @@ export const BotManager: React.FC<BotManagerProps> = ({
 		conquerBotTerritory(botId);
 	};
 
-	// Handle self-intersection for bots (updates store)
+	// --- Collision Handlers for Bots ---
+
+	// Bot hits its own trail
 	const handleSelfIntersection = (botId: number) => {
-		// Simple handling: just reset the trail
-		resetBotTrail(botId);
+		// console.log(`Bot ${botId} detected self-intersection via handler.`);
+		killBot(botId, "self"); // Bot kills itself
 	};
 
-	// REMOVED: Hidden div logic for minimap
+	// Bot hits player's trail
+	const handlePlayerTrailCollision = (killerBotId: number) => {
+		// console.log(`Bot ${killerBotId} hit player trail via handler.`);
+		setGameOver(false, killerBotId); // Player dies, killed by this bot
+	};
+
+	// Bot hits another bot's trail
+	const handleBotBotTrailCollision = (botId: number, killedBotId: number) => {
+		// console.log(`Bot ${botId} hit bot ${killedBotId}'s trail via handler.`);
+		killBot(killedBotId, botId); // Kill the other bot, this bot is the killer
+	};
+
+	// Prepare data for collision checks
+	const aliveBots = bots.filter((b) => b.isAlive);
+	const playerTrailData = player.trail;
 
 	return (
 		<>
-			{bots.map((bot, index) => (
-				<GameEntityWithTrail
-					key={bot.id}
-					ref={(el) => {
-						if (el) botRefs.current[index] = el;
-					}}
-					name={bot.name}
-					color={bot.color}
-					position={bot.position}
-					direction={bot.direction}
-					territory={bot.territory}
-					trail={bot.trail}
-					active={gameStarted && !isGameOver}
-					// Pass store actions bound to the specific bot's ID
-					onPositionUpdate={(pos) => handlePositionUpdate(bot.id, pos)}
-					onDirectionUpdate={(dir) => handleDirectionUpdate(bot.id, dir)}
-					onTrailUpdate={(pos) => handleTrailUpdate(bot.id, pos)}
-					onConquerTerritory={() => handleConquerTerritory(bot.id)}
-					onResetTrail={() => handleResetTrail(bot.id)}
-					insideTerritoryCheck={(pos) => isPointInBotTerritory(bot.id, pos)}
-					onSelfIntersection={() => handleSelfIntersection(bot.id)}
-					moveSpeed={6.0} // Bots slightly slower
-				/>
-			))}
+			{aliveBots.map((bot, index) => {
+				// Prepare trails of other alive bots for this specific bot
+				const otherAliveBotsData: OtherEntityTrail[] = aliveBots
+					.filter((otherBot) => otherBot.id !== bot.id) // Exclude self
+					.map((otherBot) => ({ id: otherBot.id, trail: otherBot.trail }));
+
+				return (
+					<GameEntityWithTrail
+						key={bot.id}
+						ref={(el) => {
+							if (el) botRefs.current[index] = el;
+						}}
+						// Entity Identification
+						entityId={bot.id}
+						isBot={true}
+						// Basic Props
+						name={bot.name}
+						color={bot.color}
+						position={bot.position}
+						direction={bot.direction}
+						territory={bot.territory}
+						trail={bot.trail} // Pass trail for conquest logic & visualization
+						active={gameStarted && !isGameOver && bot.isAlive} // Bot must be alive
+						moveSpeed={6.0} // Bots slightly slower
+						// State Update Callbacks
+						onPositionUpdate={(pos) => handlePositionUpdate(bot.id, pos)}
+						onDirectionUpdate={(dir) => handleDirectionUpdate(bot.id, dir)}
+						onTrailUpdate={(pos) => handleTrailUpdate(bot.id, pos)} // For conquest logic
+						onConquerTerritory={() => handleConquerTerritory(bot.id)}
+						onResetTrail={() => handleResetTrail(bot.id)}
+						insideTerritoryCheck={(pos) => isPointInBotTerritory(bot.id, pos)}
+						// Collision Data Props
+						playerTrail={playerTrailData}
+						otherBots={otherAliveBotsData}
+						// Collision Callback Props
+						onSelfIntersection={() => handleSelfIntersection(bot.id)}
+						onPlayerTrailCollision={handlePlayerTrailCollision} // Player dies
+						onBotBotTrailCollision={(killedId) =>
+							handleBotBotTrailCollision(bot.id, killedId)
+						} // Another bot dies
+						// onBotTrailCollision is not needed for bots (they don't kill bots by hitting their trail in this logic)
+					/>
+				);
+			})}
 		</>
 	);
 };
