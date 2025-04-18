@@ -29,3 +29,25 @@ export interface GameState {
   conquerTerritory: () => void;
   updatePersonalBestScore: (percentage: number) => void;
 }
+
+// GameEntity types moved from GameEntity.tsx
+export interface GameEntityProps {
+  name: string;
+  color: string;
+  position: [number, number];
+  direction: [number, number];
+  moveSpeed?: number;
+  active?: boolean;
+  onPositionUpdate?: (newPosition: [number, number]) => void;
+  onDirectionUpdate?: (newDirection: [number, number]) => void;
+  onTrailUpdate?: (position: [number, number]) => void;
+  insideTerritoryCheck?: (position: [number, number]) => boolean;
+}
+
+export interface GameEntityWithTrailProps extends GameEntityProps {
+  territory: [number, number][];
+  trail: [number, number][];
+  onConquerTerritory?: () => void;
+  onResetTrail?: () => void;
+  onSelfIntersection?: () => void; // Add this callback for handling self-intersection
+}

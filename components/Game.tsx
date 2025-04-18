@@ -4,8 +4,10 @@ import { useGameStore } from "../store";
 import { GameMap } from "./GameMap";
 import { Minimap } from "./Minimap";
 import * as THREE from "three";
-import { PlayerWithTrail } from "./PlayerWithTrail";
+import { GameEntityWithTrail } from "./GameEntity";
 import { GameOverScreen } from "./GameOverScreen";
+import { BotManager } from "./BotManager"; // Import the BotManager
+
 // Define proper types for the joystick props
 interface VirtualJoystickProps {
 	onDirectionChange: (direction: [number, number]) => void;
@@ -201,10 +203,23 @@ const TerritoryProgress = () => {
 };
 
 export function Game() {
-	const { updatePlayerDirection } = useGameStore();
+	const {
+		updatePlayerDirection,
+		player,
+		updatePlayerPosition,
+		conquerTerritory,
+		resetTrail,
+		gameStarted,
+		isGameOver,
+		setGameOver,
+		getDisplayPercentage,
+		addToTrail,
+	} = useGameStore();
+
 	const playerRef = useRef<any>(null);
 	const keysPressed = useRef<Set<string>>(new Set());
 	const lastDirection = useRef(new THREE.Vector2(1, 0)); // Initial direction
+
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			keysPressed.current.add(e.key.toLowerCase());
@@ -264,6 +279,7 @@ export function Game() {
 			window.removeEventListener("keyup", handleKeyUp);
 		};
 	}, [updatePlayerDirection]);
+
 	const handleJoystickDirection = (direction: [number, number]) => {
 		if (direction[0] === 0 && direction[1] === 0) {
 			// If joystick is centered, use last direction
@@ -274,6 +290,31 @@ export function Game() {
 			updatePlayerDirection(direction);
 		}
 	};
+
+	// Function to check if a point is inside the player's territory
+	const isPointInTerritory = (position: [number, number]): boolean => {
+		if (player.territory.length < 3) return false;
+
+		let inside = false;
+		for (
+			let i = 0, j = player.territory.length - 1;
+			i < player.territory.length;
+			j = i++
+		) {
+			const xi = player.territory[i][0],
+				yi = player.territory[i][1];
+			const xj = player.territory[j][0],
+				yj = player.territory[j][1];
+
+			const intersect =
+				yi > position[1] !== yj > position[1] &&
+				position[0] < ((xj - xi) * (position[1] - yi)) / (yj - yi) + xi;
+
+			if (intersect) inside = !inside;
+		}
+		return inside;
+	};
+
 	const CameraController = () => {
 		const CAMERA_HEIGHT = 12; // Height of camera
 		const CAMERA_DISTANCE = 15; // Distance from player
@@ -299,6 +340,11 @@ export function Game() {
 		return null;
 	};
 
+	// Function to handle self-intersection
+	const handleSelfIntersection = () => {
+		setGameOver(false); // Not a victory
+	};
+
 	return (
 		<div className="w-full h-screen relative">
 			<Canvas shadows>
@@ -318,7 +364,27 @@ export function Game() {
 				/>
 				<CameraController />
 				<GameMap />
-				<PlayerWithTrail ref={playerRef} />
+				<GameEntityWithTrail
+					ref={playerRef}
+					name={player.name}
+					color={player.color}
+					position={player.position}
+					direction={player.direction}
+					territory={player.territory}
+					trail={player.trail}
+					active={gameStarted && !isGameOver}
+					onPositionUpdate={updatePlayerPosition}
+					onDirectionUpdate={updatePlayerDirection}
+					onTrailUpdate={(pos) => addToTrail(pos)}
+					onConquerTerritory={conquerTerritory}
+					onResetTrail={resetTrail}
+					insideTerritoryCheck={isPointInTerritory}
+					onSelfIntersection={handleSelfIntersection}
+					moveSpeed={8.0}
+				/>
+
+				{/* Add the BotManager component */}
+				<BotManager gameStarted={gameStarted} isGameOver={isGameOver} />
 			</Canvas>
 			<Minimap />
 

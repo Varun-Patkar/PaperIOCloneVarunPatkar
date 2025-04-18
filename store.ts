@@ -3,13 +3,17 @@ import { GameState, PlayerState } from './types';
 import * as martinez from 'martinez-polygon-clipping';
 const MAX_TERRITORY_PERCENTAGE = 97;
 // Helper function to create a circle of points
-const createCircleTerritory = (radius: number, numPoints: number = 128): [number, number][] => {
+const createCircleTerritory = (
+  radius: number,
+  center: [number, number] = [0, 0],
+  numPoints: number = 128
+): [number, number][] => {
   const points: [number, number][] = [];
   for (let i = 0; i < numPoints; i++) {
     const angle = (i / numPoints) * Math.PI * 2;
     points.push([
-      Math.cos(angle) * radius, // X coordinate
-      Math.sin(angle) * radius  // Z coordinate
+      center[0] + Math.cos(angle) * radius, // X coordinate with center offset
+      center[1] + Math.sin(angle) * radius  // Z coordinate with center offset
     ]);
   }
   return points;
@@ -56,9 +60,9 @@ const pointInPolygon = (point: [number, number], polygon: [number, number][]): b
 const initialPlayerState: PlayerState = {
   name: '',
   color: '#ff0000',
-  position: [0, 0],
+  position: [0, 0], // Initial center position
   direction: [1, 0],
-  territory: createCircleTerritory(5),
+  territory: createCircleTerritory(5, [0, 0]), // Create territory at center
   trail: [],
 };
 // Add this helper function for area calculation
@@ -132,20 +136,25 @@ export const useGameStore = create<GameState>((set, get) => ({
     }),
   // Reset game function  
   resetGame: () =>
-    set(state => ({
-      player: {
-        ...initialPlayerState,
-        name: state.player.name,  // Preserve player name
-        color: state.player.color,
-        direction: [1, 0],
-        trail: [],
-        position: [0, 0],
-        territory: createCircleTerritory(5)
-      },
-      isGameOver: false,
-      isVictory: false,
-      personalBest: state.personalBest,
-    })),
+    set(state => {
+      // Define the center position (for the player, this is always [0,0])
+      const centerPosition: [number, number] = [0, 0];
+
+      return {
+        player: {
+          ...initialPlayerState,
+          name: state.player.name,  // Preserve player name
+          color: state.player.color,
+          direction: [1, 0],
+          trail: [],
+          position: centerPosition, // Set position to center
+          territory: createCircleTerritory(5, centerPosition) // Create territory at center
+        },
+        isGameOver: false,
+        isVictory: false,
+        personalBest: state.personalBest,
+      };
+    }),
   setPlayerName: (name) =>
     set((state) => ({ player: { ...state.player, name } })),
   setPlayerColor: (color) =>
