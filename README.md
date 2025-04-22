@@ -12,6 +12,14 @@ This project began as a personal challenge to break out of tutorial hell and cre
 
 Future enhancements include adding enemies, bots, multiplayer functionality, leaderboards, and additional game modes.
 
+## Video Demo
+
+Check out a video demonstration of the game in action:
+
+[![Paper.io Clone Demo](https://img.youtube.com/vi/sZs3o5sKe4g/0.jpg)](https://youtu.be/sZs3o5sKe4g)
+
+[Watch on YouTube](https://youtu.be/sZs3o5sKe4g)
+
 ## Tech Stack and Dependencies
 
 The project leverages modern web development tools and libraries:
@@ -64,6 +72,7 @@ These tools were scaffolded using [bolt.new](https://bolt.new/), a platform that
    Open your browser and navigate to `http://localhost:5173` to start the game.
 
 ## 🌐 Deployment
+
 [Link to Deployed App](https://paper-io-varun.vercel.app/)
 
 ## Contributing
