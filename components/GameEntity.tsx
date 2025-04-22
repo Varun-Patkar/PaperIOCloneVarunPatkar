@@ -84,6 +84,48 @@ const distanceSq = (p1: [number, number], p2: [number, number]): number => {
 	return dx * dx + dy * dy;
 };
 
+// Helper function to find the closest point on a polygon segment to a given point
+const closestPointOnSegment = (
+	p: [number, number],
+	a: [number, number],
+	b: [number, number]
+): [number, number] => {
+	const ap: [number, number] = [p[0] - a[0], p[1] - a[1]];
+	const ab: [number, number] = [b[0] - a[0], b[1] - a[1]];
+	const ab2 = ab[0] * ab[0] + ab[1] * ab[1];
+	const ap_dot_ab = ap[0] * ab[0] + ap[1] * ab[1];
+	let t = ap_dot_ab / ab2;
+	t = Math.max(0, Math.min(1, t)); // Clamp t to [0, 1]
+	const closest: [number, number] = [a[0] + ab[0] * t, a[1] + ab[1] * t];
+	return closest;
+};
+
+// Helper function to find the closest point on the entire polygon perimeter
+const findClosestPointOnPolygon = (
+	point: [number, number],
+	polygon: [number, number][]
+): [number, number] => {
+	if (!polygon || polygon.length === 0) return point; // Should not happen with valid territory
+	if (polygon.length === 1) return polygon[0];
+
+	let minDistSq = Infinity;
+	let closestOverall: [number, number] = polygon[0];
+
+	for (let i = 0; i < polygon.length; i++) {
+		const p1 = polygon[i];
+		const p2 = polygon[(i + 1) % polygon.length]; // Wrap around for the last segment
+
+		const closestOnSeg = closestPointOnSegment(point, p1, p2);
+		const distSq = distanceSq(point, closestOnSeg);
+
+		if (distSq < minDistSq) {
+			minDistSq = distSq;
+			closestOverall = closestOnSeg;
+		}
+	}
+	return closestOverall;
+};
+
 export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 	(
 		{
@@ -282,105 +324,37 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 				? insideTerritoryCheck(potentialNextPos2D) // Check potential next position
 				: true; // Default to inside if no check provided
 
-			// --- Collision Detection (Only if OUTSIDE territory) ---
+			// --- Collision Detection ---
 			let collisionDetected = false;
+			let shouldEntityDie = false; // Flag to indicate if this entity should die
+
 			const isMoving = distanceSq(currentPos2D, potentialNextPos2D) > 0.0001;
 
-			if (!isInside) {
-				// Only check collisions when outside territory
-				// Only check collision if moving significantly
-				if (isMoving) {
-					// 1. Self-intersection check
-					if (trail && trail.length >= 3) {
-						for (let i = 0; i < trail.length - 2; i++) {
-							if (
-								doSegmentsIntersect(
-									currentPos2D,
-									potentialNextPos2D,
-									trail[i],
-									trail[i + 1]
-								)
-							) {
-								onSelfIntersection?.();
-								collisionDetected = true;
-								break;
-							}
-						}
-					}
-
-					// 2. Collision with other trails
-					if (!collisionDetected) {
-						if (isBot) {
-							// Bot checks Player trail (only if player trail exists)
-							if (playerTrail && playerTrail.length >= 1) {
-								for (let i = 0; i < playerTrail.length - 1; i++) {
-									if (
-										doSegmentsIntersect(
-											currentPos2D,
-											potentialNextPos2D,
-											playerTrail[i],
-											playerTrail[i + 1]
-										)
-									) {
-										onPlayerTrailCollision?.(entityId as number);
-										collisionDetected = true;
-										break;
-									}
-								}
-							}
-							// Bot checks other Bots' trails (only if trails exist)
-							if (!collisionDetected && otherBots) {
-								for (const otherBot of otherBots) {
-									if (otherBot.trail.length >= 1) {
-										for (let i = 0; i < otherBot.trail.length - 1; i++) {
-											if (
-												doSegmentsIntersect(
-													currentPos2D,
-													potentialNextPos2D,
-													otherBot.trail[i],
-													otherBot.trail[i + 1]
-												)
-											) {
-												onBotBotTrailCollision?.(otherBot.id as number);
-												collisionDetected = true;
-												break;
-											}
-										}
-									}
-									if (collisionDetected) break;
-								}
-							}
-						} else {
-							// Player checks Bot trails (only if trails exist)
-							if (otherBots) {
-								for (const otherBot of otherBots) {
-									if (otherBot.trail.length >= 1) {
-										for (let i = 0; i < otherBot.trail.length - 1; i++) {
-											if (
-												doSegmentsIntersect(
-													currentPos2D,
-													potentialNextPos2D,
-													otherBot.trail[i],
-													otherBot.trail[i + 1]
-												)
-											) {
-												onBotTrailCollision?.(otherBot.id as number);
-												collisionDetected = true;
-												break;
-											}
-										}
-									}
-									if (collisionDetected) break;
-								}
-							}
+			if (isMoving) {
+				// 1. Self-intersection check (ONLY if outside territory)
+				if (!isInside && trail && trail.length >= 3) {
+					for (let i = 0; i < trail.length - 2; i++) {
+						if (
+							doSegmentsIntersect(
+								currentPos2D,
+								potentialNextPos2D,
+								trail[i],
+								trail[i + 1]
+							)
+						) {
+							// console.log(`${entityId} self-intersection OUTSIDE territory`);
+							onSelfIntersection?.(); // This entity dies
+							collisionDetected = true;
+							shouldEntityDie = true; // Mark this entity for death
+							break;
 						}
 					}
 				}
-				// --- INSIDE Territory Collision Checks (Territory Intrusion) ---
-				if (isMoving) {
-					// Check collision with *other* entities' trails that might be intruding
+
+				// 2. Collision with other trails (check regardless of being inside or outside)
+				if (!collisionDetected) {
 					if (isBot) {
-						// Bot checks Player trail inside Bot's territory
+						// Bot checks Player trail
 						if (playerTrail && playerTrail.length >= 1) {
 							for (let i = 0; i < playerTrail.length - 1; i++) {
 								if (
@@ -391,15 +365,28 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 										playerTrail[i + 1]
 									)
 								) {
-									// Bot crossed Player's trail inside Bot territory -> Player dies
-									// console.log(`Bot ${entityId} hit player trail INSIDE its territory.`);
-									onPlayerTrailCollision?.(entityId as number); // Player dies, killed by this bot
+									if (isInside) {
+										// Bot is INSIDE its territory, hits Player trail -> Player dies
+										// console.log(`Bot ${entityId} (inside) hit player trail -> Player dies`);
+										onPlayerTrailCollision?.(entityId as number); // Player dies, killed by this bot
+									} else {
+										// Bot is OUTSIDE its territory, hits Player trail -> Bot dies
+										// console.log(`Bot ${entityId} (outside) hit player trail -> Bot dies`);
+										shouldEntityDie = true; // Mark this bot for death
+										// The actual death call (setGameOver or killBot) happens based on who died
+										// We need a way to signal *who* killed this bot if it dies outside.
+										// Let's assume onPlayerTrailCollision handles the player death case,
+										// and we handle the bot's death case via shouldEntityDie.
+										// The calling context (BotManager) will handle the killBot call if shouldEntityDie is true.
+										// For simplicity, let's call the callback anyway, the store logic will sort it out.
+										onPlayerTrailCollision?.(entityId as number); // Signal collision, store decides outcome
+									}
 									collisionDetected = true;
 									break;
 								}
 							}
 						}
-						// Bot checks other Bots' trails inside Bot's territory
+						// Bot checks other Bots' trails
 						if (!collisionDetected && otherBots) {
 							for (const otherBot of otherBots) {
 								if (otherBot.trail.length >= 1) {
@@ -412,9 +399,17 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 												otherBot.trail[i + 1]
 											)
 										) {
-											// Bot crossed other Bot's trail inside own territory -> Other bot dies
-											// console.log(`Bot ${entityId} hit bot ${otherBot.id} trail INSIDE its territory.`);
-											onBotBotTrailCollision?.(otherBot.id as number); // The *other* bot dies, killed by this bot
+											if (isInside) {
+												// Bot is INSIDE its territory, hits other Bot's trail -> Other Bot dies
+												// console.log(`Bot ${entityId} (inside) hit bot ${otherBot.id} trail -> Other bot dies`);
+												onBotBotTrailCollision?.(otherBot.id as number); // The *other* bot dies, killed by this bot
+											} else {
+												// Bot is OUTSIDE its territory, hits other Bot's trail -> This Bot dies
+												// console.log(`Bot ${entityId} (outside) hit bot ${otherBot.id} trail -> This bot dies`);
+												shouldEntityDie = true; // Mark this bot for death
+												// Call callback, store decides outcome based on killer/killed IDs
+												onBotBotTrailCollision?.(otherBot.id as number); // Signal collision
+											}
 											collisionDetected = true;
 											break;
 										}
@@ -424,7 +419,7 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 							}
 						}
 					} else {
-						// Player checks Bot trails inside Player's territory
+						// Player checks Bot trails
 						if (otherBots) {
 							for (const otherBot of otherBots) {
 								if (otherBot.trail.length >= 1) {
@@ -437,9 +432,17 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 												otherBot.trail[i + 1]
 											)
 										) {
-											// Player crossed Bot's trail inside Player territory -> Bot dies
-											// console.log(`Player hit bot ${otherBot.id} trail INSIDE player territory.`);
-											onBotTrailCollision?.(otherBot.id as number); // Bot dies, killed by player
+											if (isInside) {
+												// Player is INSIDE territory, hits Bot trail -> Bot dies
+												// console.log(`Player (inside) hit bot ${otherBot.id} trail -> Bot dies`);
+												onBotTrailCollision?.(otherBot.id as number); // Bot dies, killed by player
+											} else {
+												// Player is OUTSIDE territory, hits Bot trail -> Player dies
+												// console.log(`Player (outside) hit bot ${otherBot.id} trail -> Player dies`);
+												shouldEntityDie = true; // Mark player for death
+												// Call callback, store decides outcome
+												onBotTrailCollision?.(otherBot.id as number); // Signal collision
+											}
 											collisionDetected = true;
 											break;
 										}
@@ -452,8 +455,16 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 				}
 			} // --- End Collision Detection Block ---
 
-			// If collision detected, stop movement and exit
+			// If collision detected AND this entity should die, trigger self-death and stop
+			if (shouldEntityDie) {
+				// console.log(`${entityId} marked for death, triggering onSelfIntersection`);
+				onSelfIntersection?.(); // Trigger the generic self-death callback
+				return; // Exit useFrame early
+			}
+			// If collision detected but this entity shouldn't die (it killed someone else),
+			// the appropriate callback was already called. We still stop movement for this frame.
 			if (collisionDetected) {
+				// console.log(`${entityId} detected collision but survived (killed other). Stopping movement.`);
 				return; // Exit useFrame early
 			}
 
@@ -469,28 +480,25 @@ export const GameEntity = forwardRef<THREE.Group, GameEntityProps>(
 
 			// --- Trail Update Logic ---
 			const justCrossedBoundary = wasInsideTerritory.current !== isInside;
+			const justExited = justCrossedBoundary && !isInside;
+			const justEntered = justCrossedBoundary && isInside;
 
-			if (isInside) {
-				// Just entered territory
-				if (justCrossedBoundary) {
-					// Call onTrailUpdate with the entry point to potentially trigger conquest
-					if (onTrailUpdate) {
-						onTrailUpdate(potentialNextPos2D); // Pass the point that crossed the boundary
-					}
+			if (justEntered) {
+				// Call handler with the entry point (potentialNextPos2D).
+				if (onTrailUpdate) {
+					onTrailUpdate(potentialNextPos2D);
 				}
-				// If already inside or just entered, the trail is not actively growing.
-				// Conquest/reset logic is handled by the callback in GameEntityWithTrail.
-			} else {
-				// Outside territory
-				if (justCrossedBoundary) {
-					// Just exited territory. The callback in GameEntityWithTrail should have reset the trail.
-					// Start the new trail by adding the exit point.
+			} else if (!isInside) {
+				// If outside territory...
+				if (justExited) {
+					// Call the handler with the position *before* moving outside (currentPos2D).
+					// The handler will find the closest boundary point, reset trail, add boundary point, then add this point.
 					if (onTrailUpdate) {
-						onTrailUpdate(potentialNextPos2D);
-						lastTrailUpdate.current = time; // Reset timer
+						onTrailUpdate(currentPos2D); // Pass the last point inside/on boundary
+						lastTrailUpdate.current = time; // Reset timer for subsequent points
 					}
 				} else {
-					// Still outside territory, add point if interval passed
+					// Still outside, add points periodically (potentialNextPos2D).
 					if (time - lastTrailUpdate.current >= TRAIL_UPDATE_INTERVAL) {
 						if (onTrailUpdate) {
 							onTrailUpdate(potentialNextPos2D);
@@ -555,12 +563,12 @@ export const GameEntityWithTrail = forwardRef<
 			trail, // Get trail from props to check length
 			onConquerTerritory,
 			onResetTrail,
-			onSelfIntersection, // Prop is passed down but check is removed from here
+			onSelfIntersection, // Prop is passed down
 			...entityProps // Includes onTrailUpdate from GameEntityProps
 		},
 		ref
 	) => {
-		const wasInsideTerritory = useRef(true);
+		const wasInsideTerritory = useRef(true); // Internal state matching GameEntity's
 
 		// Create territory shape geometry
 		const territoryGeometry = useMemo(() => {
@@ -596,34 +604,51 @@ export const GameEntityWithTrail = forwardRef<
 			}
 		}, [territory]); // Ensure geometry updates when territory changes
 
-		// Custom trail update handler
+		// Custom trail update handler - This is passed as `onTrailUpdate` to GameEntity
 		const handleTrailUpdate = (position: [number, number]) => {
-			// Check if the entity is inside its own territory
-			const isInside = isPointInPolygon(position, territory);
-			const justEntered = !wasInsideTerritory.current && isInside;
-			const justExited = wasInsideTerritory.current && !isInside;
+			// Check if the entity is inside its own territory *before* this update
+			// We use the internal ref which is updated at the *end* of the previous frame.
+			const isCurrentlyInside = isPointInPolygon(position, territory);
+			const justEntered = !wasInsideTerritory.current && isCurrentlyInside;
+			const justExited = wasInsideTerritory.current && !isCurrentlyInside;
 
-			// Call the original onTrailUpdate from props (the store action)
-			entityProps.onTrailUpdate?.(position);
+			if (justExited) {
+				// Just exited territory. 'position' is the last point inside/on boundary.
+				// 1. Find the closest point on the territory boundary to this exit point.
+				const closestBoundaryPoint = findClosestPointOnPolygon(
+					position,
+					territory
+				);
 
-			if (justEntered) {
-				// Just re-entered territory.
-				// Check trail length *after* the entry point has been added by the store action above.
-				if (trail.length + 1 >= 3) {
-					// Check length including the point just added
-					onConquerTerritory?.(); // Triggers conquest (which should also reset trail in store)
-				} else {
-					onResetTrail?.(); // Trail too short, just reset it.
-				}
-			} else if (justExited) {
-				// Just exited territory. Reset trail state immediately.
+				// 2. Reset the trail.
 				onResetTrail?.();
-				// The exit point itself is added by the store action called above.
-			}
-			// REMOVED Self-intersection check from here - it's handled in GameEntity's useFrame
 
-			// Update internal state for next frame
-			wasInsideTerritory.current = isInside;
+				// 3. Add the closest boundary point to the start of the new trail.
+				entityProps.onTrailUpdate?.(closestBoundaryPoint);
+
+				// 4. Add the actual exit point (the last point inside/on boundary) right after.
+				entityProps.onTrailUpdate?.(position);
+			} else if (justEntered) {
+				// Just re-entered territory. 'position' is the entry point (potentialNextPos2D).
+				// Add the entry point first.
+				entityProps.onTrailUpdate?.(position); // Call original store action (add...ToTrail)
+
+				// Now check trail length *after* adding the entry point.
+				const estimatedTrailLength = (trail?.length ?? 0) + 1;
+				if (estimatedTrailLength >= 3) {
+					onConquerTerritory?.(); // Triggers conquest (which should also reset trail in store to [])
+				} else {
+					onResetTrail?.(); // Trail too short, reset to []
+				}
+			} else if (!isCurrentlyInside) {
+				// Still outside territory (and not the first frame exiting).
+				// 'position' is potentialNextPos2D. Add it to the existing trail.
+				entityProps.onTrailUpdate?.(position); // Call original store action (add...ToTrail)
+			}
+			// If inside and not justEntered, do nothing.
+
+			// Update internal state for next frame check using the territory status of the received position
+			wasInsideTerritory.current = isPointInPolygon(position, territory);
 		};
 
 		// Restore complex trail geometry using TubeGeometry logic
@@ -738,7 +763,7 @@ export const GameEntityWithTrail = forwardRef<
 					{...entityProps}
 					ref={ref}
 					trail={trail} // Pass trail down for self-intersection checks
-					onTrailUpdate={handleTrailUpdate} // Use the refined handler for conquest logic
+					onTrailUpdate={handleTrailUpdate} // Use the refined handler
 					insideTerritoryCheck={(pos) => isPointInPolygon(pos, territory)}
 					// onSelfIntersection is passed via entityProps
 				/>

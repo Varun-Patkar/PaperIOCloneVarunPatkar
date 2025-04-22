@@ -389,23 +389,25 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
   },
 
-  // Updated conquerPlayerTerritory logic with smoothing
+  // Updated conquerPlayerTerritory logic with area check and smoothing
   conquerPlayerTerritory: () => {
     set((state) => {
       if (state.player.trail.length < 3) {
-        // ... (existing short trail handling) ...
+        console.log("Player trail too short to conquer.");
         return { player: { ...state.player, trail: [] } };
       }
 
       try {
         const currentTerritory = closePolygon([...state.player.territory]);
+        const currentArea = calculatePolygonArea(currentTerritory); // Calculate current area
+
         const trailPoints = [...state.player.trail];
         const closedTrailPoints = [...trailPoints, trailPoints[0]];
 
         // Correct type: MultiPolygon (Polygon[]) which is Position[][][]
         const territoryMultiPolygon: martinez.MultiPolygon = [[currentTerritory.map(p => [Number(p[0]), Number(p[1])])]];
         if (closedTrailPoints.some(p => p === undefined || p.length !== 2 || isNaN(p[0]) || isNaN(p[1]))) {
-          // ... (existing invalid points handling) ...
+          console.warn("Invalid points in player trail:", trailPoints);
           return { player: { ...state.player, trail: [] } };
         }
         // Correct type: MultiPolygon (Polygon[]) which is Position[][][]
@@ -416,64 +418,67 @@ export const useGameStore = create<GameState>((set, get) => ({
         let rawMergedPolygon: [number, number][] = currentTerritory; // Default
 
         if (unionResult && unionResult.length > 0 && unionResult[0].length > 0) {
-          // ... (existing logic to find the largest polygon) ...
           let largestArea = 0;
-          // Type for largestPolygon should be Position[] which is [number, number][]
           let largestPolygon: martinez.Position[] | null = null;
-          unionResult.forEach(polygon => { // polygon is Polygon (Position[][])
-            polygon.forEach((ring, ringIndex) => { // ring is LinearRing (Position[])
-              if (ringIndex === 0) { // Outer ring
-                // Ensure ring is treated as Position[] for area calculation
+          unionResult.forEach(polygon => {
+            polygon.forEach((ring, ringIndex) => {
+              if (ringIndex === 0) {
                 const area = calculatePolygonArea(ring);
                 if (area > largestArea) {
-                  largestPolygon = ring; // Assign Position[]
+                  largestArea = area;
+                  largestPolygon = ring;
                 }
               }
             });
           });
 
           if (largestPolygon) {
-            // Map Position[] to [number, number][] (which is the same type)
             rawMergedPolygon = largestPolygon.map(p => [p[0], p[1]]);
           } else {
-            console.warn("Martinez union resulted in valid structure but no largest polygon found?", unionResult);
+            console.warn("Martinez union resulted in valid structure but no largest polygon found for player?", unionResult);
             rawMergedPolygon = currentTerritory; // Fallback
           }
         } else {
-          console.warn("Martinez union failed or returned empty result. Trail:", trailPoints);
+          console.warn("Martinez union failed or returned empty result for player. Trail:", trailPoints);
           rawMergedPolygon = currentTerritory; // Fallback
         }
 
-        // Ensure the raw polygon is closed before simplifying
         const closedRawPolygon = closePolygon(rawMergedPolygon);
-
-        // Simplify the resulting polygon
         const simplifiedMergedPolygon = simplifyPolygon(closedRawPolygon);
-
-        // Apply smoothing after simplification
-        const SMOOTHING_ITERATIONS = 2; // Adjust this number for more/less smoothing
+        const SMOOTHING_ITERATIONS = 2;
         const smoothedPolygon = smoothPolygon(simplifiedMergedPolygon, SMOOTHING_ITERATIONS);
 
-        const finalTerritory = smoothedPolygon; // Use the smoothed version
+        const finalTerritory = smoothedPolygon;
         const newArea = calculatePolygonArea(finalTerritory);
 
-        // ... (victory check) ...
-        const actualPercentage = (newArea / TOTAL_GAME_AREA) * 100;
-        if (actualPercentage >= MAX_TERRITORY_PERCENTAGE) {
-          get().setGameOver(true); // Player wins
+        // --- Area Check ---
+        if (newArea > currentArea) {
+          // console.log(`Player conquered new area: ${newArea.toFixed(1)} (was ${currentArea.toFixed(1)})`);
+          // Check for victory
+          const actualPercentage = (newArea / TOTAL_GAME_AREA) * 100;
+          if (actualPercentage >= MAX_TERRITORY_PERCENTAGE) {
+            get().setGameOver(true); // Player wins
+          }
+
+          return {
+            player: {
+              ...state.player,
+              territory: finalTerritory, // Update with the new, larger territory
+              trail: [],
+            },
+          };
+        } else {
+          // console.log(`Player conquest resulted in smaller/equal area (${newArea.toFixed(1)} <= ${currentArea.toFixed(1)}). Resetting trail.`);
+          // Area did not increase, just reset the trail
+          return {
+            player: {
+              ...state.player,
+              trail: [],
+            },
+          };
         }
-
-
-        return {
-          player: {
-            ...state.player,
-            territory: finalTerritory, // Update with the smoothed polygon
-            trail: [],
-          },
-        };
       } catch (error) {
-        // ... (existing error handling) ...
-        console.error("Error during territory conquest:", error);
+        console.error("Error during player territory conquest:", error);
         return {
           player: {
             ...state.player,
@@ -482,7 +487,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         };
       }
     });
-    get().updatePersonalBest();
+    get().updatePersonalBest(); // Update PB regardless of whether territory grew (might have reached 100%)
   },
 
   // Bot Actions
@@ -544,15 +549,113 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
   },
 
-  // Simplified conquer for bots: just reset trail and potentially expand territory slightly
+  // Updated conquerBotTerritory with full logic and area check
   conquerBotTerritory: (botId) => {
-    set((state) => ({
-      bots: state.bots.map(bot => {
-        if (bot.id !== botId) return bot;
-        // Simple logic: reset trail. Could add simple territory expansion later.
-        return { ...bot, trail: [] };
-      }),
-    }));
+    set((state) => {
+      const botIndex = state.bots.findIndex(b => b.id === botId);
+      if (botIndex === -1 || !state.bots[botIndex].isAlive) {
+        return {}; // Bot not found or dead
+      }
+
+      const bot = state.bots[botIndex];
+      if (bot.trail.length < 3) {
+        // console.log(`Bot ${botId} trail too short to conquer.`);
+        // Reset trail only
+        const updatedBots = [...state.bots];
+        updatedBots[botIndex] = { ...bot, trail: [] };
+        return { bots: updatedBots };
+      }
+
+      try {
+        const currentTerritory = closePolygon([...bot.territory]);
+        const currentArea = calculatePolygonArea(currentTerritory); // Calculate current area
+
+        const trailPoints = [...bot.trail];
+        const closedTrailPoints = [...trailPoints, trailPoints[0]];
+
+        const territoryMultiPolygon: martinez.MultiPolygon = [[currentTerritory.map(p => [Number(p[0]), Number(p[1])])]];
+        if (closedTrailPoints.some(p => p === undefined || p.length !== 2 || isNaN(p[0]) || isNaN(p[1]))) {
+          console.warn(`Invalid points in bot ${botId} trail:`, trailPoints);
+          // Reset trail only
+          const updatedBots = [...state.bots];
+          updatedBots[botIndex] = { ...bot, trail: [] };
+          return { bots: updatedBots };
+        }
+        const trailMultiPolygon: martinez.MultiPolygon = [[closedTrailPoints.map(p => [Number(p[0]), Number(p[1])])]];
+
+        const unionResult = martinez.union(territoryMultiPolygon, trailMultiPolygon);
+
+        let rawMergedPolygon: [number, number][] = currentTerritory; // Default
+
+        if (unionResult && unionResult.length > 0 && unionResult[0].length > 0) {
+          let largestArea = 0;
+          let largestPolygon: martinez.Position[] | null = null;
+          unionResult.forEach(polygon => {
+            polygon.forEach((ring, ringIndex) => {
+              if (ringIndex === 0) {
+                const area = calculatePolygonArea(ring);
+                if (area > largestArea) {
+                  largestArea = area;
+                  largestPolygon = ring;
+                }
+              }
+            });
+          });
+
+          if (largestPolygon) {
+            rawMergedPolygon = largestPolygon.map(p => [p[0], p[1]]);
+          } else {
+            console.warn(`Martinez union resulted in valid structure but no largest polygon found for bot ${botId}?`, unionResult);
+            rawMergedPolygon = currentTerritory; // Fallback
+          }
+        } else {
+          console.warn(`Martinez union failed or returned empty result for bot ${botId}. Trail:`, trailPoints);
+          rawMergedPolygon = currentTerritory; // Fallback
+        }
+
+        const closedRawPolygon = closePolygon(rawMergedPolygon);
+        const simplifiedMergedPolygon = simplifyPolygon(closedRawPolygon);
+        const SMOOTHING_ITERATIONS = 2;
+        const smoothedPolygon = smoothPolygon(simplifiedMergedPolygon, SMOOTHING_ITERATIONS);
+
+        const finalTerritory = smoothedPolygon;
+        const newArea = calculatePolygonArea(finalTerritory);
+
+        const updatedBots = [...state.bots];
+
+        // --- Area Check ---
+        if (newArea > currentArea) {
+          // console.log(`Bot ${botId} conquered new area: ${newArea.toFixed(1)} (was ${currentArea.toFixed(1)})`);
+          // Check for bot victory (unlikely but possible)
+          const actualPercentage = (newArea / TOTAL_GAME_AREA) * 100;
+          if (actualPercentage >= MAX_TERRITORY_PERCENTAGE) {
+            console.log(`Bot ${botId} achieved victory condition!`);
+            // Decide how to handle bot victory (e.g., end game? declare bot winner?)
+            // For now, just log it. A full implementation might need more state.
+          }
+
+          updatedBots[botIndex] = {
+            ...bot,
+            territory: finalTerritory, // Update territory
+            territoryArea: newArea, // Update stored area
+            trail: [], // Reset trail
+          };
+        } else {
+          // console.log(`Bot ${botId} conquest resulted in smaller/equal area (${newArea.toFixed(1)} <= ${currentArea.toFixed(1)}). Resetting trail.`);
+          // Area did not increase, just reset the trail
+          updatedBots[botIndex] = { ...bot, trail: [] };
+        }
+
+        return { bots: updatedBots };
+
+      } catch (error) {
+        console.error(`Error during bot ${botId} territory conquest:`, error);
+        // Reset trail only on error
+        const updatedBots = [...state.bots];
+        updatedBots[botIndex] = { ...bot, trail: [] };
+        return { bots: updatedBots };
+      }
+    });
   },
 
   // New Action: Kill Bot
